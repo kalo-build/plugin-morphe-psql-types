@@ -2,9 +2,11 @@ package compile
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/kaloseia/clone"
+	"github.com/kaloseia/go-util/core"
 	"github.com/kaloseia/go-util/strcase"
 	"github.com/kaloseia/morphe-go/pkg/registry"
 	"github.com/kaloseia/morphe-go/pkg/yaml"
@@ -80,7 +82,11 @@ func getModelTable(config cfg.MorpheConfig, r *registry.Registry, model yaml.Mod
 		ForeignKeys:       []psqldef.ForeignKey{},
 		UniqueConstraints: []psqldef.UniqueConstraint{},
 	}
-	columns, columnsErr := getColumnsForModelFields(model.Fields)
+	primaryID, primaryIDExists := model.Identifiers["primary"]
+	if !primaryIDExists {
+		return nil, fmt.Errorf("no primary identifier set for model '%s'", model.Name)
+	}
+	columns, columnsErr := getColumnsForModelFields(primaryID, model.Fields)
 	if columnsErr != nil {
 		return nil, columnsErr
 	}
@@ -89,10 +95,12 @@ func getModelTable(config cfg.MorpheConfig, r *registry.Registry, model yaml.Mod
 	return &modelTable, nil
 }
 
-func getColumnsForModelFields(modelFields map[string]yaml.ModelField) ([]psqldef.Column, error) {
+func getColumnsForModelFields(primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, error) {
 	columns := []psqldef.Column{}
 
-	for fieldName, field := range modelFields {
+	modelFieldNames := core.MapKeysSorted(modelFields)
+	for _, fieldName := range modelFieldNames {
+		field := modelFields[fieldName]
 		columnName := getColumnNameFromField(fieldName)
 
 		columnType, supported := typemap.MorpheModelFieldToGoField[field.Type]
@@ -104,7 +112,7 @@ func getColumnsForModelFields(modelFields map[string]yaml.ModelField) ([]psqldef
 			Name:       columnName,
 			Type:       columnType,
 			NotNull:    false,
-			PrimaryKey: false,
+			PrimaryKey: slices.Index(primaryID.Fields, fieldName) != -1,
 			Default:    "",
 		}
 
