@@ -10,6 +10,7 @@ import (
 	"github.com/kaloseia/go-util/strcase"
 	"github.com/kaloseia/morphe-go/pkg/registry"
 	"github.com/kaloseia/morphe-go/pkg/yaml"
+	"github.com/kaloseia/morphe-go/pkg/yamlops"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
@@ -86,16 +87,40 @@ func getModelTable(config cfg.MorpheConfig, r *registry.Registry, model yaml.Mod
 	if !primaryIDExists {
 		return nil, fmt.Errorf("no primary identifier set for model '%s'", model.Name)
 	}
-	columns, columnsErr := getColumnsForModelFields(primaryID, model.Fields)
-	if columnsErr != nil {
-		return nil, columnsErr
+	typeMap := typemap.MorpheModelFieldToPSQLField
+	if config.UseBigSerial {
+		typeMap = typemap.MorpheModelFieldToPSQLFieldBigSerial
 	}
-	modelTable.Columns = columns
+	fieldColumns, fieldColumnsErr := getColumnsForModelFields(typeMap, primaryID, model.Fields)
+	if fieldColumnsErr != nil {
+		return nil, fieldColumnsErr
+	}
+	relatedTypeMap := typemap.MorpheModelFieldToPSQLFieldForeign
+	if config.UseBigSerial {
+		relatedTypeMap = typemap.MorpheModelFieldToPSQLFieldBigSerialForeign
+	}
+
+	relatedColumns, relatedColumnsErr := getColumnsForModelRelations(r, relatedTypeMap, model.Related)
+	if relatedColumnsErr != nil {
+		return nil, relatedColumnsErr
+	}
+	modelTable.Columns = append(fieldColumns, relatedColumns...)
+
+	// Add foreign key constraints and indices for related models
+	foreignKeys, foreignKeysErr := getForeignKeysForModelRelations(config.MorpheModelsConfig.Schema, model.Name, r, model.Related)
+	if foreignKeysErr != nil {
+		return nil, foreignKeysErr
+	}
+	modelTable.ForeignKeys = foreignKeys
+
+	// Create corresponding indices for foreign keys
+	indices := getIndicesForForeignKeys(tableName, foreignKeys)
+	modelTable.Indices = indices
 
 	return &modelTable, nil
 }
 
-func getColumnsForModelFields(primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, error) {
+func getColumnsForModelFields(typeMap map[yaml.ModelFieldType]psqldef.PSQLType, primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, error) {
 	columns := []psqldef.Column{}
 
 	modelFieldNames := core.MapKeysSorted(modelFields)
@@ -103,9 +128,9 @@ func getColumnsForModelFields(primaryID yaml.ModelIdentifier, modelFields map[st
 		field := modelFields[fieldName]
 		columnName := getColumnNameFromField(fieldName)
 
-		columnType, supported := typemap.MorpheModelFieldToGoField[field.Type]
+		columnType, supported := typeMap[field.Type]
 		if !supported {
-			return nil, fmt.Errorf("morphe model field %s has unsupported type: %s", fieldName, field.Type)
+			return nil, fmt.Errorf("morphe model field '%s' has unsupported type '%s'", fieldName, field.Type)
 		}
 
 		column := psqldef.Column{
@@ -120,6 +145,134 @@ func getColumnsForModelFields(primaryID yaml.ModelIdentifier, modelFields map[st
 	}
 
 	return columns, nil
+}
+
+func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, relatedModels map[string]yaml.ModelRelation) ([]psqldef.Column, error) {
+	columns := []psqldef.Column{}
+
+	relatedModelNames := core.MapKeysSorted(relatedModels)
+	for _, relatedModelName := range relatedModelNames {
+		modelRelation := relatedModels[relatedModelName]
+		relationType := modelRelation.Type
+		relatedModel, modelErr := r.GetModel(relatedModelName)
+		if modelErr != nil {
+			return nil, modelErr
+		}
+		primaryID, hasPrimary := relatedModel.Identifiers["primary"]
+		if !hasPrimary {
+			return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+		}
+
+		if len(primaryID.Fields) != 1 {
+			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", relatedModelName)
+		}
+
+		targetPrimaryIdName := primaryID.Fields[0]
+		targetPrimaryIdField, primaryFieldExists := relatedModel.Fields[targetPrimaryIdName]
+		if !primaryFieldExists {
+			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", relatedModelName, targetPrimaryIdName)
+		}
+
+		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
+			columnName := fmt.Sprintf(
+				`%s_%s`,
+				strcase.ToSnakeCaseLower(relatedModelName),
+				strcase.ToSnakeCaseLower(targetPrimaryIdName),
+			)
+
+			columnType, supported := typeMap[targetPrimaryIdField.Type]
+			if !supported {
+				return nil, fmt.Errorf("morphe related model field '%s' has unsupported type '%s'", targetPrimaryIdName, targetPrimaryIdField.Type)
+			}
+
+			column := psqldef.Column{
+				Name:       columnName,
+				Type:       columnType,
+				NotNull:    false,
+				PrimaryKey: false,
+				Default:    "",
+			}
+
+			columns = append(columns, column)
+		}
+	}
+
+	return columns, nil
+}
+
+func getForeignKeysForModelRelations(schema string, modelName string, r *registry.Registry, relatedModels map[string]yaml.ModelRelation) ([]psqldef.ForeignKey, error) {
+	foreignKeys := []psqldef.ForeignKey{}
+
+	relatedModelNames := core.MapKeysSorted(relatedModels)
+	for _, relatedModelName := range relatedModelNames {
+		modelRelation := relatedModels[relatedModelName]
+		relationType := modelRelation.Type
+		relatedModel, modelErr := r.GetModel(relatedModelName)
+		if modelErr != nil {
+			return nil, modelErr
+		}
+		primaryID, hasPrimary := relatedModel.Identifiers["primary"]
+		if !hasPrimary {
+			return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+		}
+
+		if len(primaryID.Fields) != 1 {
+			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", relatedModelName)
+		}
+
+		targetPrimaryIdName := primaryID.Fields[0]
+		_, primaryFieldExists := relatedModel.Fields[targetPrimaryIdName]
+		if !primaryFieldExists {
+			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", relatedModelName, targetPrimaryIdName)
+		}
+
+		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
+			columnName := fmt.Sprintf(
+				`%s_%s`,
+				strcase.ToSnakeCaseLower(relatedModelName),
+				strcase.ToSnakeCaseLower(targetPrimaryIdName),
+			)
+
+			refTableName := getTableNameFromModel(relatedModelName)
+			refColumnName := getColumnNameFromField(targetPrimaryIdName)
+
+			foreignKey := psqldef.ForeignKey{
+				Schema:         schema,
+				Name:           fmt.Sprintf("fk_%s_%s", strcase.ToSnakeCaseLower(modelName), columnName),
+				TableName:      getTableNameFromModel(modelName),
+				ColumnNames:    []string{columnName},
+				RefTableName:   refTableName,
+				RefColumnNames: []string{refColumnName},
+				OnDelete:       "CASCADE", // Using CASCADE as per the spec examples
+				OnUpdate:       "",        // Default behavior
+			}
+
+			foreignKeys = append(foreignKeys, foreignKey)
+		}
+	}
+
+	return foreignKeys, nil
+}
+
+func getIndicesForForeignKeys(tableName string, foreignKeys []psqldef.ForeignKey) []psqldef.Index {
+	indices := []psqldef.Index{}
+
+	for _, fk := range foreignKeys {
+		for _, columnName := range fk.ColumnNames {
+			indexName := fmt.Sprintf("idx_%s_%s", tableName, columnName)
+
+			index := psqldef.Index{
+				Name:      indexName,
+				TableName: tableName,
+				Columns:   []string{columnName},
+				IsUnique:  false,
+			}
+
+			indices = append(indices, index)
+		}
+	}
+
+	return indices
 }
 
 func getTableNameFromModel(modelName string) string {

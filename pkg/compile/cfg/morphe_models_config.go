@@ -1,7 +1,5 @@
 package cfg
 
-import "fmt"
-
 // MorpheModelsConfig holds configuration specific to PostgreSQL model tables
 type MorpheModelsConfig struct {
 	// Schema to use for model tables
@@ -14,7 +12,7 @@ type MorpheModelsConfig struct {
 // Validate checks if the models configuration is valid
 func (config MorpheModelsConfig) Validate() error {
 	if config.Schema == "" {
-		return fmt.Errorf("models %w", ErrNoModelSchema)
+		return ErrNoModelSchema
 	}
 
 	return nil

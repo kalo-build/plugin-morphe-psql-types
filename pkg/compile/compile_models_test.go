@@ -110,15 +110,12 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables() {
 
 	table0 := allTables[0]
 
-	// Test table properties
 	suite.Equal(config.MorpheConfig.MorpheModelsConfig.Schema, table0.Schema)
 	suite.Equal("basics", table0.Name)
 
-	// Test columns
 	columns := table0.Columns
 	suite.Len(columns, 10)
 
-	// Test each column individually by index
 	columns00 := columns[0]
 	suite.Equal("auto_increment", columns00.Name)
 	suite.Equal(psqldef.PSQLTypeSerial, columns00.Type)
@@ -177,7 +174,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables() {
 
 	columns08 := columns[8]
 	suite.Equal("time", columns08.Name)
-	suite.Equal(psqldef.PSQLTypeTimestamp, columns08.Type)
+	suite.Equal(psqldef.PSQLTypeTimestampTZ, columns08.Type)
 	suite.False(columns08.NotNull)
 	suite.False(columns08.PrimaryKey)
 	suite.Equal("", columns08.Default)
@@ -186,11 +183,319 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables() {
 	suite.Equal("uuid", columns09.Name)
 	suite.Equal(psqldef.PSQLTypeUUID, columns09.Type)
 	suite.False(columns09.NotNull)
-	suite.True(columns09.PrimaryKey) // TODO
+	suite.True(columns09.PrimaryKey)
 	suite.Equal("", columns09.Default)
 
-	// Test indices, foreign keys, and unique constraints
 	suite.Len(table0.Indices, 0)
 	suite.Len(table0.ForeignKeys, 0)
 	suite.Len(table0.UniqueConstraints, 0)
 }
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_UseBigSerial() {
+	config := suite.getCompileConfig()
+	config.UseBigSerial = true
+
+	model0 := yaml.Model{
+		Name: "Basic",
+		Fields: map[string]yaml.ModelField{
+			"AutoIncrement": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"UUID": {
+				Type: yaml.ModelFieldTypeUUID,
+				Attributes: []string{
+					"immutable",
+					"primary",
+				},
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"UUID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+
+	suite.Equal(config.MorpheConfig.MorpheModelsConfig.Schema, table0.Schema)
+	suite.Equal("basics", table0.Name)
+
+	columns := table0.Columns
+	suite.Len(columns, 2)
+
+	columns00 := columns[0]
+	suite.Equal("auto_increment", columns00.Name)
+	suite.Equal(psqldef.PSQLTypeBigSerial, columns00.Type)
+	suite.False(columns00.NotNull)
+	suite.False(columns00.PrimaryKey)
+	suite.Equal("", columns00.Default)
+
+	columns01 := columns[1]
+	suite.Equal("uuid", columns01.Name)
+	suite.Equal(psqldef.PSQLTypeUUID, columns01.Type)
+	suite.False(columns01.NotNull)
+	suite.True(columns01.PrimaryKey)
+	suite.Equal("", columns01.Default)
+
+	suite.Len(table0.Indices, 0)
+	suite.Len(table0.ForeignKeys, 0)
+	suite.Len(table0.UniqueConstraints, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_NoSchema() {
+	config := suite.getCompileConfig()
+	config.Schema = ""
+
+	model0 := yaml.Model{
+		Name: "Basic",
+		Fields: map[string]yaml.ModelField{
+			"AutoIncrement": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"UUID": {
+				Type: yaml.ModelFieldTypeUUID,
+				Attributes: []string{
+					"immutable",
+					"primary",
+				},
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"UUID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorIs(allTablesErr, cfg.ErrNoModelSchema)
+	suite.Len(allTables, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_NoModelName() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name: "",
+		Fields: map[string]yaml.ModelField{
+			"AutoIncrement": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"UUID": {
+				Type: yaml.ModelFieldTypeUUID,
+				Attributes: []string{
+					"immutable",
+					"primary",
+				},
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"UUID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "morphe model has no name")
+	suite.Len(allTables, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_NoFields() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name:   "Basic",
+		Fields: map[string]yaml.ModelField{},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"UUID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "morphe model has no fields")
+	suite.Len(allTables, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_NoIdentifiers() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name: "Basic",
+		Fields: map[string]yaml.ModelField{
+			"AutoIncrement": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"UUID": {
+				Type: yaml.ModelFieldTypeUUID,
+				Attributes: []string{
+					"immutable",
+					"primary",
+				},
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{},
+		Related:     map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "morphe model has no identifiers")
+	suite.Len(allTables, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name: "Basic",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"String": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"ID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"BasicParent": {
+				Type: "ForOne",
+			},
+		},
+	}
+	model1 := yaml.Model{
+		Name: "BasicParent",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"String": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"ID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Basic": {
+				Type: "HasMany",
+			},
+		},
+	}
+	r := registry.NewRegistry()
+	r.SetModel("Basic", model0)
+	r.SetModel("BasicParent", model1)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+
+	suite.Equal(config.MorpheConfig.MorpheModelsConfig.Schema, table0.Schema)
+	suite.Equal("basics", table0.Name)
+
+	columns0 := table0.Columns
+	suite.Len(columns0, 3)
+
+	columns00 := columns0[0]
+	suite.Equal("id", columns00.Name)
+	suite.Equal(psqldef.PSQLTypeSerial, columns00.Type)
+	suite.False(columns00.NotNull)
+	suite.True(columns00.PrimaryKey)
+	suite.Equal("", columns00.Default)
+
+	columns01 := columns0[1]
+	suite.Equal("string", columns01.Name)
+	suite.Equal(psqldef.PSQLTypeText, columns01.Type)
+	suite.False(columns01.NotNull)
+	suite.False(columns01.PrimaryKey)
+	suite.Equal("", columns01.Default)
+
+	columns02 := columns0[2]
+	suite.Equal("basic_parent_id", columns02.Name)
+	suite.Equal(psqldef.PSQLTypeInteger, columns02.Type)
+	suite.False(columns01.NotNull)
+	suite.False(columns01.PrimaryKey)
+	suite.Equal("", columns01.Default)
+
+	suite.Len(table0.ForeignKeys, 1)
+
+	foreignKey0 := table0.ForeignKeys[0]
+	suite.Equal("public", foreignKey0.Schema)
+	suite.Equal("fk_basic_basic_parent_id", foreignKey0.Name)
+	suite.Equal("basics", foreignKey0.TableName)
+	suite.Len(foreignKey0.ColumnNames, 1)
+	fkColumn00 := foreignKey0.ColumnNames[0]
+	suite.Equal("basic_parent_id", fkColumn00)
+	suite.Equal("basic_parents", foreignKey0.RefTableName)
+	suite.Len(foreignKey0.RefColumnNames, 1)
+	fkColumnRef00 := foreignKey0.RefColumnNames[0]
+	suite.Equal("id", fkColumnRef00)
+	suite.Equal("CASCADE", foreignKey0.OnDelete)
+	suite.Equal("", foreignKey0.OnUpdate)
+
+	suite.Len(table0.Indices, 1)
+	index0 := table0.Indices[0]
+	suite.Equal("idx_basics_basic_parent_id", index0.Name)
+	suite.Equal("basics", index0.TableName)
+	suite.Len(index0.Columns, 1)
+	suite.Equal("basic_parent_id", index0.Columns[0])
+	suite.False(index0.IsUnique)
+
+	suite.Len(table0.UniqueConstraints, 0)
+}
+
+// TODO: Test cases
+// _Related*
+// _EnumField
+// _*Hook*
