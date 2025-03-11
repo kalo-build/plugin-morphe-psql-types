@@ -194,7 +194,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables() {
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_UseBigSerial() {
 	config := suite.getCompileConfig()
-	config.UseBigSerial = true
+	config.MorpheModelsConfig.UseBigSerial = true
 
 	model0 := yaml.Model{
 		Name: "Basic",
@@ -256,7 +256,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_UseBigSerial() 
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_NoSchema() {
 	config := suite.getCompileConfig()
-	config.Schema = ""
+	config.MorpheModelsConfig.Schema = ""
 
 	model0 := yaml.Model{
 		Name: "Basic",
@@ -1009,7 +1009,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_StartHook_Succe
 			if featureFlag != "otherName" {
 				return config, model, nil
 			}
-			config.UseBigSerial = true
+			config.MorpheModelsConfig.UseBigSerial = true
 			model.Name = model.Name + "CHANGED"
 			delete(model.Fields, "Float")
 			return config, model, nil

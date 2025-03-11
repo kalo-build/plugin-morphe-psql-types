@@ -15,6 +15,8 @@ type MorpheCompileConfig struct {
 
 	// ModelWriter write.GoStructWriter
 	ModelHooks hook.CompileMorpheModel
+
+	EnumHooks hook.CompileMorpheEnum
 }
 
 func (config MorpheCompileConfig) Validate() error {

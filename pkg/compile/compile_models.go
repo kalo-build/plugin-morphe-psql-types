@@ -65,7 +65,7 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	var typeMap map[yaml.ModelFieldType]psqldef.PSQLType
 	var relatedTypeMap map[yaml.ModelFieldType]psqldef.PSQLType
 
-	if config.UseBigSerial {
+	if config.MorpheModelsConfig.UseBigSerial {
 		typeMap = typemap.MorpheModelFieldToPSQLFieldBigSerial
 		relatedTypeMap = typemap.MorpheModelFieldToPSQLFieldBigSerialForeign
 	} else {
