@@ -3,11 +3,9 @@ package compile
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/kaloseia/clone"
 	"github.com/kaloseia/go-util/core"
-	"github.com/kaloseia/go-util/strcase"
 	"github.com/kaloseia/morphe-go/pkg/registry"
 	"github.com/kaloseia/morphe-go/pkg/yaml"
 	"github.com/kaloseia/morphe-go/pkg/yamlops"
@@ -58,56 +56,49 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		return nil, validateMorpheErr
 	}
 
-	modelTable, modelTableErr := getModelTable(config, r, model)
-	if modelTableErr != nil {
-		return nil, modelTableErr
-	}
-	allModelTables := []*psqldef.Table{
-		modelTable,
+	// Name of the model
+	schema := config.MorpheModelsConfig.Schema
+	modelName := model.Name
+	tableName := GetTableNameFromModel(modelName)
+
+	// Get the appropriate type maps based on UseBigSerial config
+	var typeMap map[yaml.ModelFieldType]psqldef.PSQLType
+	var relatedTypeMap map[yaml.ModelFieldType]psqldef.PSQLType
+
+	if config.UseBigSerial {
+		typeMap = typemap.MorpheModelFieldToPSQLFieldBigSerial
+		relatedTypeMap = typemap.MorpheModelFieldToPSQLFieldBigSerialForeign
+	} else {
+		typeMap = typemap.MorpheModelFieldToPSQLField
+		relatedTypeMap = typemap.MorpheModelFieldToPSQLFieldForeign
 	}
 
-	return allModelTables, nil
-}
-
-func getModelTable(config cfg.MorpheConfig, r *registry.Registry, model yaml.Model) (*psqldef.Table, error) {
-	if r == nil {
-		return nil, ErrNoRegistry
-	}
-
-	tableName := getTableNameFromModel(model.Name)
-	modelTable := psqldef.Table{
-		Schema:            config.MorpheModelsConfig.Schema,
-		Name:              tableName,
-		Columns:           []psqldef.Column{},
-		Indices:           []psqldef.Index{},
-		ForeignKeys:       []psqldef.ForeignKey{},
-		UniqueConstraints: []psqldef.UniqueConstraint{},
-	}
 	primaryID, primaryIDExists := model.Identifiers["primary"]
 	if !primaryIDExists {
 		return nil, fmt.Errorf("no primary identifier set for model '%s'", model.Name)
 	}
-	typeMap := typemap.MorpheModelFieldToPSQLField
-	if config.UseBigSerial {
-		typeMap = typemap.MorpheModelFieldToPSQLFieldBigSerial
-	}
+
 	fieldColumns, fieldColumnsErr := getColumnsForModelFields(typeMap, primaryID, model.Fields)
 	if fieldColumnsErr != nil {
 		return nil, fieldColumnsErr
-	}
-	relatedTypeMap := typemap.MorpheModelFieldToPSQLFieldForeign
-	if config.UseBigSerial {
-		relatedTypeMap = typemap.MorpheModelFieldToPSQLFieldBigSerialForeign
 	}
 
 	relatedColumns, relatedColumnsErr := getColumnsForModelRelations(r, relatedTypeMap, model.Related)
 	if relatedColumnsErr != nil {
 		return nil, relatedColumnsErr
 	}
-	modelTable.Columns = append(fieldColumns, relatedColumns...)
+
+	modelTable := psqldef.Table{
+		Schema:            schema,
+		Name:              tableName,
+		Columns:           append(fieldColumns, relatedColumns...),
+		ForeignKeys:       []psqldef.ForeignKey{},
+		Indices:           []psqldef.Index{},
+		UniqueConstraints: []psqldef.UniqueConstraint{},
+	}
 
 	// Add foreign key constraints and indices for related models
-	foreignKeys, foreignKeysErr := getForeignKeysForModelRelations(config.MorpheModelsConfig.Schema, model.Name, r, model.Related)
+	foreignKeys, foreignKeysErr := getForeignKeysForModelRelations(schema, tableName, r, model.Related)
 	if foreignKeysErr != nil {
 		return nil, foreignKeysErr
 	}
@@ -117,7 +108,19 @@ func getModelTable(config cfg.MorpheConfig, r *registry.Registry, model yaml.Mod
 	indices := getIndicesForForeignKeys(tableName, foreignKeys)
 	modelTable.Indices = indices
 
-	return &modelTable, nil
+	// Create junction tables for any ForMany relationships
+	junctionTables, junctionTablesErr := getJunctionTablesForForManyRelations(schema, r, model)
+	if junctionTablesErr != nil {
+		return nil, junctionTablesErr
+	}
+
+	// Return the main model table and any junction tables
+	tables := []*psqldef.Table{&modelTable}
+	if len(junctionTables) > 0 {
+		tables = append(tables, junctionTables...)
+	}
+
+	return tables, nil
 }
 
 func getColumnsForModelFields(typeMap map[yaml.ModelFieldType]psqldef.PSQLType, primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, error) {
@@ -126,7 +129,7 @@ func getColumnsForModelFields(typeMap map[yaml.ModelFieldType]psqldef.PSQLType, 
 	modelFieldNames := core.MapKeysSorted(modelFields)
 	for _, fieldName := range modelFieldNames {
 		field := modelFields[fieldName]
-		columnName := getColumnNameFromField(fieldName)
+		columnName := GetColumnNameFromField(fieldName)
 
 		columnType, supported := typeMap[field.Type]
 		if !supported {
@@ -174,11 +177,7 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
-			columnName := fmt.Sprintf(
-				`%s_%s`,
-				strcase.ToSnakeCaseLower(relatedModelName),
-				strcase.ToSnakeCaseLower(targetPrimaryIdName),
-			)
+			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
 
 			columnType, supported := typeMap[targetPrimaryIdField.Type]
 			if !supported {
@@ -200,7 +199,7 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 	return columns, nil
 }
 
-func getForeignKeysForModelRelations(schema string, modelName string, r *registry.Registry, relatedModels map[string]yaml.ModelRelation) ([]psqldef.ForeignKey, error) {
+func getForeignKeysForModelRelations(schema string, tableName string, r *registry.Registry, relatedModels map[string]yaml.ModelRelation) ([]psqldef.ForeignKey, error) {
 	foreignKeys := []psqldef.ForeignKey{}
 
 	relatedModelNames := core.MapKeysSorted(relatedModels)
@@ -227,19 +226,14 @@ func getForeignKeysForModelRelations(schema string, modelName string, r *registr
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
-			columnName := fmt.Sprintf(
-				`%s_%s`,
-				strcase.ToSnakeCaseLower(relatedModelName),
-				strcase.ToSnakeCaseLower(targetPrimaryIdName),
-			)
-
-			refTableName := getTableNameFromModel(relatedModelName)
-			refColumnName := getColumnNameFromField(targetPrimaryIdName)
+			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
+			refTableName := GetTableNameFromModel(relatedModelName)
+			refColumnName := GetColumnNameFromField(targetPrimaryIdName)
 
 			foreignKey := psqldef.ForeignKey{
 				Schema:         schema,
-				Name:           fmt.Sprintf("fk_%s_%s", strcase.ToSnakeCaseLower(modelName), columnName),
-				TableName:      getTableNameFromModel(modelName),
+				Name:           GetForeignKeyConstraintName(tableName, columnName),
+				TableName:      tableName,
 				ColumnNames:    []string{columnName},
 				RefTableName:   refTableName,
 				RefColumnNames: []string{refColumnName},
@@ -259,10 +253,8 @@ func getIndicesForForeignKeys(tableName string, foreignKeys []psqldef.ForeignKey
 
 	for _, fk := range foreignKeys {
 		for _, columnName := range fk.ColumnNames {
-			indexName := fmt.Sprintf("idx_%s_%s", tableName, columnName)
-
 			index := psqldef.Index{
-				Name:      indexName,
+				Name:      GetIndexName(tableName, columnName),
 				TableName: tableName,
 				Columns:   []string{columnName},
 				IsUnique:  false,
@@ -273,26 +265,6 @@ func getIndicesForForeignKeys(tableName string, foreignKeys []psqldef.ForeignKey
 	}
 
 	return indices
-}
-
-func getTableNameFromModel(modelName string) string {
-	snakeCase := strcase.ToSnakeCaseLower(modelName)
-
-	// Pluralize (simple pluralization)
-	if strings.HasSuffix(snakeCase, "s") || strings.HasSuffix(snakeCase, "x") ||
-		strings.HasSuffix(snakeCase, "z") || strings.HasSuffix(snakeCase, "ch") ||
-		strings.HasSuffix(snakeCase, "sh") {
-		return snakeCase + "es"
-	} else if strings.HasSuffix(snakeCase, "y") {
-		return snakeCase[:len(snakeCase)-1] + "ies"
-	} else {
-		return snakeCase + "s"
-	}
-}
-
-func getColumnNameFromField(fieldName string) string {
-	snakeCase := strcase.ToSnakeCaseLower(fieldName)
-	return snakeCase
 }
 
 func triggerCompileMorpheModelStart(modelHooks hook.CompileMorpheModel, config cfg.MorpheConfig, model yaml.Model) (cfg.MorpheConfig, yaml.Model, error) {
@@ -330,4 +302,127 @@ func triggerCompileMorpheModelFailure(hooks hook.CompileMorpheModel, morpheConfi
 	}
 
 	return hooks.OnCompileMorpheModelFailure(morpheConfig, model.DeepClone(), failureErr)
+}
+
+// getJunctionTablesForForManyRelations creates junction tables for ForMany relationships
+func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, model yaml.Model) ([]*psqldef.Table, error) {
+	junctionTables := []*psqldef.Table{}
+	modelName := model.Name
+	tableName := GetTableNameFromModel(modelName)
+
+	// Get primary ID field for this model
+	primaryID, hasPrimary := model.Identifiers["primary"]
+	if !hasPrimary {
+		return nil, fmt.Errorf("model %s has no primary identifier", modelName)
+	}
+	if len(primaryID.Fields) != 1 {
+		return nil, fmt.Errorf("model %s primary identifier must have exactly one field", modelName)
+	}
+	primaryIdName := primaryID.Fields[0]
+
+	relatedModelNames := core.MapKeysSorted(model.Related)
+	for _, relatedModelName := range relatedModelNames {
+		modelRelation := model.Related[relatedModelName]
+		relationType := modelRelation.Type
+
+		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationMany(relationType) {
+			relatedModel, modelErr := r.GetModel(relatedModelName)
+			if modelErr != nil {
+				return nil, modelErr
+			}
+
+			// Get primary ID field for related model
+			relatedPrimaryID, hasRelatedPrimary := relatedModel.Identifiers["primary"]
+			if !hasRelatedPrimary {
+				return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+			}
+			if len(relatedPrimaryID.Fields) != 1 {
+				return nil, fmt.Errorf("related model %s primary identifier must have exactly one field", relatedModelName)
+			}
+			relatedPrimaryIdName := relatedPrimaryID.Fields[0]
+
+			// Create junction table
+			junctionTableName := GetJunctionTableName(modelName, relatedModelName)
+
+			// Create column names
+			sourceColumnName := GetForeignKeyColumnName(modelName, primaryIdName)
+			targetColumnName := GetForeignKeyColumnName(relatedModelName, relatedPrimaryIdName)
+
+			// Create columns
+			columns := []psqldef.Column{
+				{
+					Name:       "id",
+					Type:       psqldef.PSQLTypeSerial,
+					PrimaryKey: true,
+				},
+				{
+					Name: sourceColumnName,
+					Type: psqldef.PSQLTypeInteger,
+				},
+				{
+					Name: targetColumnName,
+					Type: psqldef.PSQLTypeInteger,
+				},
+			}
+
+			// Create foreign keys
+			foreignKeys := []psqldef.ForeignKey{
+				{
+					Schema:       schema,
+					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, modelName, primaryIdName),
+					TableName:    junctionTableName,
+					ColumnNames:  []string{sourceColumnName},
+					RefTableName: tableName,
+					RefColumnNames: []string{
+						GetColumnNameFromField(primaryIdName),
+					},
+					OnDelete: "CASCADE",
+				},
+				{
+					Schema:       schema,
+					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, relatedModelName, relatedPrimaryIdName),
+					TableName:    junctionTableName,
+					ColumnNames:  []string{targetColumnName},
+					RefTableName: GetTableNameFromModel(relatedModelName),
+					RefColumnNames: []string{
+						GetColumnNameFromField(relatedPrimaryIdName),
+					},
+					OnDelete: "CASCADE",
+				},
+			}
+
+			// Create unique constraint
+			uniqueConstraints := []psqldef.UniqueConstraint{
+				{
+					Name: GetJunctionTableUniqueConstraintName(
+						junctionTableName,
+						modelName, primaryIdName,
+						relatedModelName, relatedPrimaryIdName,
+					),
+					TableName: junctionTableName,
+					ColumnNames: []string{
+						sourceColumnName,
+						targetColumnName,
+					},
+				},
+			}
+
+			// Create indices for foreign keys
+			indices := getIndicesForForeignKeys(junctionTableName, foreignKeys)
+
+			// Create junction table
+			junctionTable := &psqldef.Table{
+				Schema:            schema,
+				Name:              junctionTableName,
+				Columns:           columns,
+				ForeignKeys:       foreignKeys,
+				Indices:           indices,
+				UniqueConstraints: uniqueConstraints,
+			}
+
+			junctionTables = append(junctionTables, junctionTable)
+		}
+	}
+
+	return junctionTables, nil
 }
