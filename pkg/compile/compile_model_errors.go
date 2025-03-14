@@ -2,5 +2,5 @@ package compile
 
 import "errors"
 
-var ErrNoModelStructs = errors.New("no model structs provided")
-var ErrNoModelStruct = errors.New("no model struct provided")
+var ErrNoModelTables = errors.New("no model tables provided")
+var ErrNoModelTable = errors.New("no model table provided")

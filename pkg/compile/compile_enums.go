@@ -11,47 +11,72 @@ import (
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
 )
 
-// MorpheEnumToPSQLTable converts a Morphe enum to a PostgreSQL lookup table and seed data
-func MorpheEnumToPSQLTable(config MorpheCompileConfig, enum yaml.Enum) (*psqldef.Table, *psqldef.InsertStatement, error) {
-	// Apply the start hook if configured
-	var err error
-	config.MorpheConfig, enum, err = triggerCompileMorpheEnumStart(config.EnumHooks, config.MorpheConfig, enum)
-	if err != nil {
-		return nil, nil, triggerCompileMorpheEnumFailure(config.EnumHooks, config.MorpheConfig, enum, err)
+// MorpheEnumToPSQLTable converts a Morphe enum to a PostgreSQL lookup table with seed data
+func MorpheEnumToPSQLTable(enumHooks hook.CompileMorpheEnum, config cfg.MorpheEnumsConfig, enum yaml.Enum) (*psqldef.Table, error) {
+	config, enum, enumStartErr := triggerCompileMorpheEnumStart(enumHooks, config, enum)
+	if enumStartErr != nil {
+		return nil, triggerCompileMorpheEnumFailure(enumHooks, config, enum, enumStartErr)
 	}
 
-	// Validate enum
-	if err := validateEnum(config, enum); err != nil {
-		return nil, nil, triggerCompileMorpheEnumFailure(config.EnumHooks, config.MorpheConfig, enum, err)
+	table, createPSQLTableForEnumErr := createPSQLTableForEnum(config, enum)
+	if createPSQLTableForEnumErr != nil {
+		return nil, triggerCompileMorpheEnumFailure(enumHooks, config, enum, createPSQLTableForEnumErr)
 	}
 
-	// Create table and seed data
-	table, seedData := createPSQLTableForEnum(config, enum)
-
-	// Apply the success hook
-	table, seedData, err = triggerCompileMorpheEnumSuccess(config.EnumHooks, table, seedData)
-	if err != nil {
-		return nil, nil, triggerCompileMorpheEnumFailure(config.EnumHooks, config.MorpheConfig, enum, err)
+	table, enumSuccessErr := triggerCompileMorpheEnumSuccess(enumHooks, table)
+	if enumSuccessErr != nil {
+		return nil, triggerCompileMorpheEnumFailure(enumHooks, config, enum, enumSuccessErr)
 	}
 
-	return table, seedData, nil
+	return table, nil
 }
 
-// createPSQLTableForEnum creates a PostgreSQL table and seed data for a Morphe enum
-func createPSQLTableForEnum(config MorpheCompileConfig, enum yaml.Enum) (*psqldef.Table, *psqldef.InsertStatement) {
-	// Create the table name: singular enum name to plural snake_case
-	// e.g., "UserRole" -> "user_roles"
+// createPSQLTableForEnum creates a PostgreSQL table with seed data for a Morphe enum
+func createPSQLTableForEnum(config cfg.MorpheEnumsConfig, enum yaml.Enum) (*psqldef.Table, error) {
+	validateConfigErr := config.Validate()
+	if validateConfigErr != nil {
+		return nil, validateConfigErr
+	}
+	validateMorpheErr := enum.Validate()
+	if validateMorpheErr != nil {
+		return nil, validateMorpheErr
+	}
+
 	tableName := strcase.ToSnakeCaseLower(enum.Name)
 	tableName = Pluralize(tableName)
 
-	// Create the PostgreSQL table
+	serialType := psqldef.PSQLTypeSerial
+	if config.UseBigSerial {
+		serialType = psqldef.PSQLTypeBigSerial
+	}
+
+	seedData := psqldef.InsertStatement{
+		Schema:    config.Schema,
+		TableName: tableName,
+		Columns:   []string{"key", "value", "value_type"},
+		Values:    [][]any{},
+	}
+
+	entryNames := core.MapKeysSorted(enum.Entries)
+	for _, key := range entryNames {
+		value := enum.Entries[key]
+		valueStr := fmt.Sprintf("%v", value)
+		valueType := string(enum.Type)
+
+		seedData.Values = append(seedData.Values, []any{
+			key,
+			valueStr,
+			valueType,
+		})
+	}
+
 	table := &psqldef.Table{
-		Schema: config.MorpheConfig.MorpheEnumsConfig.Schema,
+		Schema: config.Schema,
 		Name:   tableName,
 		Columns: []psqldef.Column{
 			{
 				Name:       "id",
-				Type:       psqldef.PSQLTypeSerial,
+				Type:       serialType,
 				PrimaryKey: true,
 			},
 			{
@@ -64,8 +89,12 @@ func createPSQLTableForEnum(config MorpheCompileConfig, enum yaml.Enum) (*psqlde
 				Type:    psqldef.PSQLTypeText,
 				NotNull: true,
 			},
+			{
+				Name:    "value_type",
+				Type:    psqldef.PSQLTypeText,
+				NotNull: true,
+			},
 		},
-		// Add a unique constraint for the key column
 		UniqueConstraints: []psqldef.UniqueConstraint{
 			{
 				Name:        "uk_" + tableName + "_key",
@@ -73,33 +102,14 @@ func createPSQLTableForEnum(config MorpheCompileConfig, enum yaml.Enum) (*psqlde
 				ColumnNames: []string{"key"},
 			},
 		},
+		SeedData: []psqldef.InsertStatement{seedData},
 	}
 
-	// Create the INSERT statement for seed data
-	seedData := &psqldef.InsertStatement{
-		Schema:    config.MorpheConfig.MorpheEnumsConfig.Schema,
-		TableName: tableName,
-		Columns:   []string{"key", "value"},
-		Values:    [][]any{},
-	}
-
-	entryNames := core.MapKeysSorted(enum.Entries)
-	// Generate values for each enum entry
-	for _, key := range entryNames {
-		value := enum.Entries[key]
-		valueStr := fmt.Sprintf("%v", value)
-
-		seedData.Values = append(seedData.Values, []any{
-			key,
-			valueStr,
-		})
-	}
-
-	return table, seedData
+	return table, nil
 }
 
 // triggerCompileMorpheEnumStart triggers the start hook for enum compilation
-func triggerCompileMorpheEnumStart(hooks hook.CompileMorpheEnum, config cfg.MorpheConfig, enum yaml.Enum) (cfg.MorpheConfig, yaml.Enum, error) {
+func triggerCompileMorpheEnumStart(hooks hook.CompileMorpheEnum, config cfg.MorpheEnumsConfig, enum yaml.Enum) (cfg.MorpheEnumsConfig, yaml.Enum, error) {
 	if hooks.OnCompileMorpheEnumStart == nil {
 		return config, enum, nil
 	}
@@ -108,44 +118,26 @@ func triggerCompileMorpheEnumStart(hooks hook.CompileMorpheEnum, config cfg.Morp
 }
 
 // triggerCompileMorpheEnumSuccess triggers the success hook for enum compilation
-func triggerCompileMorpheEnumSuccess(hooks hook.CompileMorpheEnum, table *psqldef.Table, seedData *psqldef.InsertStatement) (*psqldef.Table, *psqldef.InsertStatement, error) {
+func triggerCompileMorpheEnumSuccess(hooks hook.CompileMorpheEnum, table *psqldef.Table) (*psqldef.Table, error) {
 	if hooks.OnCompileMorpheEnumSuccess == nil {
-		return table, seedData, nil
+		return table, nil
 	}
 
 	tableClone := table.DeepClone()
-	seedDataClone := seedData.DeepClone()
 
-	table, seedData, err := hooks.OnCompileMorpheEnumSuccess(&tableClone, &seedDataClone)
+	updatedTable, err := hooks.OnCompileMorpheEnumSuccess(&tableClone)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return table, seedData, nil
+	return updatedTable, nil
 }
 
 // triggerCompileMorpheEnumFailure triggers the failure hook for enum compilation
-func triggerCompileMorpheEnumFailure(hooks hook.CompileMorpheEnum, config cfg.MorpheConfig, enum yaml.Enum, failureErr error) error {
+func triggerCompileMorpheEnumFailure(hooks hook.CompileMorpheEnum, config cfg.MorpheEnumsConfig, enum yaml.Enum, failureErr error) error {
 	if hooks.OnCompileMorpheEnumFailure == nil {
 		return failureErr
 	}
 
 	return hooks.OnCompileMorpheEnumFailure(config, enum, failureErr)
-}
-
-// validateEnum validates that an enum has all required fields
-func validateEnum(config MorpheCompileConfig, enum yaml.Enum) error {
-	if enum.Name == "" {
-		return fmt.Errorf("enum name cannot be empty")
-	}
-
-	if len(enum.Entries) == 0 {
-		return fmt.Errorf("enum must have at least one entry")
-	}
-
-	if config.MorpheConfig.MorpheEnumsConfig.Schema == "" {
-		return fmt.Errorf("schema cannot be empty")
-	}
-
-	return nil
 }

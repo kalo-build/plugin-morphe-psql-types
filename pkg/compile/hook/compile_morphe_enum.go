@@ -6,12 +6,18 @@ import (
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
 )
 
+// CompileMorpheEnum contains hooks for compiling Morphe enums to PostgreSQL
 type CompileMorpheEnum struct {
-	OnCompileMorpheEnumStart   OnCompileMorpheEnumStartHook
+	// Called at the start of compilation for an enum
+	OnCompileMorpheEnumStart OnCompileMorpheEnumStartHook
+
+	// Called on successful compilation of an enum
 	OnCompileMorpheEnumSuccess OnCompileMorpheEnumSuccessHook
+
+	// Called when compilation of an enum fails
 	OnCompileMorpheEnumFailure OnCompileMorpheEnumFailureHook
 }
 
-type OnCompileMorpheEnumStartHook = func(config cfg.MorpheConfig, enum yaml.Enum) (cfg.MorpheConfig, yaml.Enum, error)
-type OnCompileMorpheEnumSuccessHook = func(table *psqldef.Table, seedData *psqldef.InsertStatement) (*psqldef.Table, *psqldef.InsertStatement, error)
-type OnCompileMorpheEnumFailureHook = func(config cfg.MorpheConfig, enum yaml.Enum, compileFailure error) error
+type OnCompileMorpheEnumStartHook = func(config cfg.MorpheEnumsConfig, enum yaml.Enum) (cfg.MorpheEnumsConfig, yaml.Enum, error)
+type OnCompileMorpheEnumSuccessHook = func(table *psqldef.Table) (*psqldef.Table, error)
+type OnCompileMorpheEnumFailureHook = func(config cfg.MorpheEnumsConfig, enum yaml.Enum, compileFailure error) error

@@ -8,9 +8,9 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		return rErr
 	}
 
-	_, compileAllErr := AllMorpheModelsToPSQLTables(config, r) // allModelStructDefs
-	if compileAllErr != nil {
-		return compileAllErr
+	_, compileAllModelsErr := AllMorpheModelsToPSQLTables(config, r) // allModelTables
+	if compileAllModelsErr != nil {
+		return compileAllModelsErr
 	}
 
 	// _, writeModelStructsErr := WriteAllModelStructDefinitions(config, allModelStructDefs)

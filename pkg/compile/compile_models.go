@@ -6,6 +6,7 @@ import (
 
 	"github.com/kaloseia/clone"
 	"github.com/kaloseia/go-util/core"
+	"github.com/kaloseia/go-util/strcase"
 	"github.com/kaloseia/morphe-go/pkg/registry"
 	"github.com/kaloseia/morphe-go/pkg/yaml"
 	"github.com/kaloseia/morphe-go/pkg/yamlops"
@@ -16,15 +17,15 @@ import (
 )
 
 func AllMorpheModelsToPSQLTables(config MorpheCompileConfig, r *registry.Registry) (map[string][]*psqldef.Table, error) {
-	allModelStructDefs := map[string][]*psqldef.Table{}
+	allModelTableDefs := map[string][]*psqldef.Table{}
 	for modelName, model := range r.GetAllModels() {
-		modelStructs, modelErr := MorpheModelToPSQLTables(config, r, model)
+		modelTables, modelErr := MorpheModelToPSQLTables(config, r, model)
 		if modelErr != nil {
 			return nil, modelErr
 		}
-		allModelStructDefs[modelName] = modelStructs
+		allModelTableDefs[modelName] = modelTables
 	}
-	return allModelStructDefs, nil
+	return allModelTableDefs, nil
 }
 
 func MorpheModelToPSQLTables(config MorpheCompileConfig, r *registry.Registry, model yaml.Model) ([]*psqldef.Table, error) {
@@ -34,16 +35,16 @@ func MorpheModelToPSQLTables(config MorpheCompileConfig, r *registry.Registry, m
 	}
 	config.MorpheConfig = morpheConfig
 
-	allModelStructs, structsErr := morpheModelToPSQLTables(config.MorpheConfig, r, model)
-	if structsErr != nil {
-		return nil, triggerCompileMorpheModelFailure(config.ModelHooks, morpheConfig, model, structsErr)
+	allModelTables, tablesErr := morpheModelToPSQLTables(config.MorpheConfig, r, model)
+	if tablesErr != nil {
+		return nil, triggerCompileMorpheModelFailure(config.ModelHooks, morpheConfig, model, tablesErr)
 	}
 
-	allModelStructs, compileSuccessErr := triggerCompileMorpheModelSuccess(config.ModelHooks, allModelStructs)
+	allModelTables, compileSuccessErr := triggerCompileMorpheModelSuccess(config.ModelHooks, allModelTables)
 	if compileSuccessErr != nil {
 		return nil, triggerCompileMorpheModelFailure(config.ModelHooks, morpheConfig, model, compileSuccessErr)
 	}
-	return allModelStructs, nil
+	return allModelTables, nil
 }
 
 func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, model yaml.Model) ([]*psqldef.Table, error) {
@@ -56,12 +57,10 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		return nil, validateMorpheErr
 	}
 
-	// Name of the model
 	schema := config.MorpheModelsConfig.Schema
 	modelName := model.Name
 	tableName := GetTableNameFromModel(modelName)
 
-	// Get the appropriate type maps based on UseBigSerial config
 	var typeMap map[yaml.ModelFieldType]psqldef.PSQLType
 	var relatedTypeMap map[yaml.ModelFieldType]psqldef.PSQLType
 
@@ -78,7 +77,7 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		return nil, fmt.Errorf("no primary identifier set for model '%s'", model.Name)
 	}
 
-	fieldColumns, fieldColumnsErr := getColumnsForModelFields(typeMap, primaryID, model.Fields)
+	fieldColumns, enumForeignKeys, fieldColumnsErr := getColumnsForModelFields(config, r, typeMap, tableName, primaryID, model.Fields)
 	if fieldColumnsErr != nil {
 		return nil, fieldColumnsErr
 	}
@@ -92,29 +91,25 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		Schema:            schema,
 		Name:              tableName,
 		Columns:           append(fieldColumns, relatedColumns...),
-		ForeignKeys:       []psqldef.ForeignKey{},
+		ForeignKeys:       enumForeignKeys,
 		Indices:           []psqldef.Index{},
 		UniqueConstraints: []psqldef.UniqueConstraint{},
 	}
 
-	// Add foreign key constraints and indices for related models
-	foreignKeys, foreignKeysErr := getForeignKeysForModelRelations(schema, tableName, r, model.Related)
+	relationForeignKeys, foreignKeysErr := getForeignKeysForModelRelations(schema, tableName, r, model.Related)
 	if foreignKeysErr != nil {
 		return nil, foreignKeysErr
 	}
-	modelTable.ForeignKeys = foreignKeys
+	modelTable.ForeignKeys = append(modelTable.ForeignKeys, relationForeignKeys...)
 
-	// Create corresponding indices for foreign keys
-	indices := getIndicesForForeignKeys(tableName, foreignKeys)
+	indices := getIndicesForForeignKeys(tableName, modelTable.ForeignKeys)
 	modelTable.Indices = indices
 
-	// Create junction tables for any ForMany relationships
 	junctionTables, junctionTablesErr := getJunctionTablesForForManyRelations(schema, r, model)
 	if junctionTablesErr != nil {
 		return nil, junctionTablesErr
 	}
 
-	// Return the main model table and any junction tables
 	tables := []*psqldef.Table{&modelTable}
 	if len(junctionTables) > 0 {
 		tables = append(tables, junctionTables...)
@@ -123,8 +118,9 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	return tables, nil
 }
 
-func getColumnsForModelFields(typeMap map[yaml.ModelFieldType]psqldef.PSQLType, primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, error) {
+func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, tableName string, primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, []psqldef.ForeignKey, error) {
 	columns := []psqldef.Column{}
+	enumForeignKeys := []psqldef.ForeignKey{}
 
 	modelFieldNames := core.MapKeysSorted(modelFields)
 	for _, fieldName := range modelFieldNames {
@@ -132,22 +128,49 @@ func getColumnsForModelFields(typeMap map[yaml.ModelFieldType]psqldef.PSQLType, 
 		columnName := GetColumnNameFromField(fieldName)
 
 		columnType, supported := typeMap[field.Type]
-		if !supported {
-			return nil, fmt.Errorf("morphe model field '%s' has unsupported type '%s'", fieldName, field.Type)
+		if supported {
+			column := psqldef.Column{
+				Name:       columnName,
+				Type:       columnType,
+				NotNull:    false,
+				PrimaryKey: slices.Index(primaryID.Fields, fieldName) != -1,
+				Default:    "",
+			}
+			columns = append(columns, column)
+			continue
 		}
+
+		enumType, enumErr := r.GetEnum(string(field.Type))
+		if enumErr != nil {
+			return nil, nil, fmt.Errorf("morphe model field '%s' has unsupported type '%s'", fieldName, field.Type)
+		}
+
+		columnName = columnName + "_id"
+		enumTableName := Pluralize(strcase.ToSnakeCaseLower(enumType.Name))
+
+		foreignKey := psqldef.ForeignKey{
+			Schema:         config.MorpheModelsConfig.Schema,
+			Name:           GetForeignKeyConstraintName(tableName, columnName),
+			TableName:      tableName,
+			ColumnNames:    []string{columnName},
+			RefTableName:   enumTableName,
+			RefColumnNames: []string{"id"},
+			OnDelete:       "CASCADE",
+			OnUpdate:       "",
+		}
+		enumForeignKeys = append(enumForeignKeys, foreignKey)
 
 		column := psqldef.Column{
 			Name:       columnName,
-			Type:       columnType,
-			NotNull:    false,
+			Type:       psqldef.PSQLTypeInteger,
+			NotNull:    true,
 			PrimaryKey: slices.Index(primaryID.Fields, fieldName) != -1,
 			Default:    "",
 		}
-
 		columns = append(columns, column)
 	}
 
-	return columns, nil
+	return columns, enumForeignKeys, nil
 }
 
 func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, relatedModels map[string]yaml.ModelRelation) ([]psqldef.Column, error) {
@@ -280,20 +303,20 @@ func triggerCompileMorpheModelStart(modelHooks hook.CompileMorpheModel, config c
 	return updatedConfig, updatedModel, nil
 }
 
-func triggerCompileMorpheModelSuccess(hooks hook.CompileMorpheModel, allModelStructs []*psqldef.Table) ([]*psqldef.Table, error) {
+func triggerCompileMorpheModelSuccess(hooks hook.CompileMorpheModel, allModelTables []*psqldef.Table) ([]*psqldef.Table, error) {
 	if hooks.OnCompileMorpheModelSuccess == nil {
-		return allModelStructs, nil
+		return allModelTables, nil
 	}
-	if allModelStructs == nil {
-		return nil, ErrNoModelStructs
+	if allModelTables == nil {
+		return nil, ErrNoModelTables
 	}
-	allModelStructsClone := clone.DeepCloneSlicePointers(allModelStructs)
+	allModelTablesClone := clone.DeepCloneSlicePointers(allModelTables)
 
-	allModelStructs, successErr := hooks.OnCompileMorpheModelSuccess(allModelStructsClone)
+	allModelTables, successErr := hooks.OnCompileMorpheModelSuccess(allModelTablesClone)
 	if successErr != nil {
 		return nil, successErr
 	}
-	return allModelStructs, nil
+	return allModelTables, nil
 }
 
 func triggerCompileMorpheModelFailure(hooks hook.CompileMorpheModel, morpheConfig cfg.MorpheConfig, model yaml.Model, failureErr error) error {
