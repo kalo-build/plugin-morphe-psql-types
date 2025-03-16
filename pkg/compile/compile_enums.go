@@ -5,27 +5,40 @@ import (
 
 	"github.com/kaloseia/go-util/core"
 	"github.com/kaloseia/go-util/strcase"
+	"github.com/kaloseia/morphe-go/pkg/registry"
 	"github.com/kaloseia/morphe-go/pkg/yaml"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
 )
 
+func AllMorpheEnumsToPSQLTables(config MorpheCompileConfig, r *registry.Registry) (map[string]*psqldef.Table, error) {
+	allEnumTableDefs := map[string]*psqldef.Table{}
+	for enumName, enum := range r.GetAllEnums() {
+		enumTable, enumErr := MorpheEnumToPSQLTable(config, enum)
+		if enumErr != nil {
+			return nil, enumErr
+		}
+		allEnumTableDefs[enumName] = enumTable
+	}
+	return allEnumTableDefs, nil
+}
+
 // MorpheEnumToPSQLTable converts a Morphe enum to a PostgreSQL lookup table with seed data
-func MorpheEnumToPSQLTable(enumHooks hook.CompileMorpheEnum, config cfg.MorpheEnumsConfig, enum yaml.Enum) (*psqldef.Table, error) {
-	config, enum, enumStartErr := triggerCompileMorpheEnumStart(enumHooks, config, enum)
+func MorpheEnumToPSQLTable(config MorpheCompileConfig, enum yaml.Enum) (*psqldef.Table, error) {
+	enumsConfig, enum, enumStartErr := triggerCompileMorpheEnumStart(config.EnumHooks, config.MorpheEnumsConfig, enum)
 	if enumStartErr != nil {
-		return nil, triggerCompileMorpheEnumFailure(enumHooks, config, enum, enumStartErr)
+		return nil, triggerCompileMorpheEnumFailure(config.EnumHooks, config.MorpheEnumsConfig, enum, enumStartErr)
 	}
 
-	table, createPSQLTableForEnumErr := createPSQLTableForEnum(config, enum)
+	table, createPSQLTableForEnumErr := createPSQLTableForEnum(enumsConfig, enum)
 	if createPSQLTableForEnumErr != nil {
-		return nil, triggerCompileMorpheEnumFailure(enumHooks, config, enum, createPSQLTableForEnumErr)
+		return nil, triggerCompileMorpheEnumFailure(config.EnumHooks, enumsConfig, enum, createPSQLTableForEnumErr)
 	}
 
-	table, enumSuccessErr := triggerCompileMorpheEnumSuccess(enumHooks, table)
+	table, enumSuccessErr := triggerCompileMorpheEnumSuccess(config.EnumHooks, table)
 	if enumSuccessErr != nil {
-		return nil, triggerCompileMorpheEnumFailure(enumHooks, config, enum, enumSuccessErr)
+		return nil, triggerCompileMorpheEnumFailure(config.EnumHooks, enumsConfig, enum, enumSuccessErr)
 	}
 
 	return table, nil

@@ -20,9 +20,14 @@ func TestCompileEnumsTestSuite(t *testing.T) {
 	suite.Run(t, new(CompileEnumsTestSuite))
 }
 
-func (suite *CompileEnumsTestSuite) getMorpheEnumsConfig() cfg.MorpheEnumsConfig {
-	return cfg.MorpheEnumsConfig{
-		Schema: "public",
+func (suite *CompileEnumsTestSuite) getMorpheConfig() compile.MorpheCompileConfig {
+	return compile.MorpheCompileConfig{
+		MorpheConfig: cfg.MorpheConfig{
+			MorpheEnumsConfig: cfg.MorpheEnumsConfig{
+				Schema: "public",
+			},
+		},
+		EnumHooks: hook.CompileMorpheEnum{},
 	}
 }
 
@@ -33,8 +38,7 @@ func (suite *CompileEnumsTestSuite) TearDownTest() {
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_String() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Name: "UserRole",
@@ -46,13 +50,13 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_String() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.Nil(enumErr)
 	suite.NotNil(lookupTable)
 	suite.NotEmpty(lookupTable.SeedData)
 
-	suite.Equal(config.Schema, lookupTable.Schema)
+	suite.Equal(config.MorpheEnumsConfig.Schema, lookupTable.Schema)
 	suite.Equal("user_roles", lookupTable.Name)
 
 	suite.Len(lookupTable.Columns, 4)
@@ -106,9 +110,8 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_String() {
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_String_UseBigSerial() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
-	config.UseBigSerial = true
+	config := suite.getMorpheConfig()
+	config.MorpheEnumsConfig.UseBigSerial = true
 
 	enum0 := yaml.Enum{
 		Name: "UserRole",
@@ -120,13 +123,13 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_String_UseBigSeria
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.Nil(enumErr)
 	suite.NotNil(lookupTable)
 	suite.NotEmpty(lookupTable.SeedData)
 
-	suite.Equal(config.Schema, lookupTable.Schema)
+	suite.Equal(config.MorpheEnumsConfig.Schema, lookupTable.Schema)
 	suite.Equal("user_roles", lookupTable.Name)
 
 	suite.Len(lookupTable.Columns, 4)
@@ -180,8 +183,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_String_UseBigSeria
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_Float() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Name: "Analytics",
@@ -192,13 +194,13 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_Float() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.Nil(enumErr)
 	suite.NotNil(lookupTable)
 	suite.NotEmpty(lookupTable.SeedData)
 
-	suite.Equal(config.Schema, lookupTable.Schema)
+	suite.Equal(config.MorpheEnumsConfig.Schema, lookupTable.Schema)
 	suite.Equal("analytics", lookupTable.Name)
 
 	suite.Len(lookupTable.Columns, 4)
@@ -247,8 +249,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_Float() {
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_Integer() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Name: "Analytics",
@@ -259,13 +260,13 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_Integer() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.Nil(enumErr)
 	suite.NotNil(lookupTable)
 	suite.NotEmpty(lookupTable.SeedData)
 
-	suite.Equal(config.Schema, lookupTable.Schema)
+	suite.Equal(config.MorpheEnumsConfig.Schema, lookupTable.Schema)
 	suite.Equal("analytics", lookupTable.Name)
 
 	suite.Len(lookupTable.Columns, 4)
@@ -314,8 +315,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_Integer() {
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_NoName() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Type: yaml.EnumTypeString,
@@ -326,15 +326,14 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_NoName() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorIs(enumErr, yaml.ErrNoMorpheEnumName)
 	suite.Nil(lookupTable)
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_NoType() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Name: "UserRole",
@@ -345,15 +344,14 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_NoType() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorIs(enumErr, yaml.ErrNoMorpheEnumType)
 	suite.Nil(lookupTable)
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_NoEntries() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Name:    "UserRole",
@@ -361,15 +359,14 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_NoEntries() {
 		Entries: map[string]any{},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorIs(enumErr, yaml.ErrNoMorpheEnumEntries)
 	suite.Nil(lookupTable)
 }
 
 func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_EntryTypeMismatch() {
-	enumHooks := hook.CompileMorpheEnum{}
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
 
 	enum0 := yaml.Enum{
 		Name: "Color",
@@ -381,7 +378,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_EntryTypeMismatch(
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorContains(enumErr, "enum entry 'Blue' value 'rgb(0,0,255)' with type 'string' does not match the enum type of 'Integer'")
 	suite.Nil(lookupTable)
@@ -400,7 +397,8 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_StartHook_Successf
 		},
 	}
 
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
+	config.EnumHooks = enumHooks
 
 	enum0 := yaml.Enum{
 		Name: "Color",
@@ -412,13 +410,13 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_StartHook_Successf
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.Nil(enumErr)
 	suite.NotNil(lookupTable)
 	suite.NotEmpty(lookupTable.SeedData)
 
-	suite.Equal(config.Schema, lookupTable.Schema)
+	suite.Equal(config.MorpheEnumsConfig.Schema, lookupTable.Schema)
 	suite.Equal("color_changeds", lookupTable.Name)
 
 	suite.Len(lookupTable.Columns, 4)
@@ -477,7 +475,8 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToGoEnum_StartHook_Failure() {
 		},
 	}
 
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
+	config.EnumHooks = enumHooks
 
 	enum0 := yaml.Enum{
 		Name: "Color",
@@ -489,7 +488,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToGoEnum_StartHook_Failure() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorContains(enumErr, "compile enum start hook error")
 	suite.Nil(lookupTable)
@@ -525,7 +524,8 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_SuccessHook_Succes
 		},
 	}
 
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
+	config.EnumHooks = enumHooks
 
 	enum0 := yaml.Enum{
 		Name: "Color",
@@ -537,13 +537,13 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_SuccessHook_Succes
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.Nil(enumErr)
 	suite.NotNil(lookupTable)
 	suite.NotEmpty(lookupTable.SeedData)
 
-	suite.Equal(config.Schema, lookupTable.Schema)
+	suite.Equal(config.MorpheEnumsConfig.Schema, lookupTable.Schema)
 	suite.Equal("colors_changed", lookupTable.Name)
 
 	suite.Len(lookupTable.Columns, 5)
@@ -597,7 +597,8 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_SuccessHook_Failur
 		},
 	}
 
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
+	config.EnumHooks = enumHooks
 
 	enum0 := yaml.Enum{
 		Name: "Color",
@@ -609,7 +610,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_SuccessHook_Failur
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorContains(enumErr, "compile enum success hook error")
 	suite.Nil(lookupTable)
@@ -628,7 +629,8 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_FailureHook() {
 		},
 	}
 
-	config := suite.getMorpheEnumsConfig()
+	config := suite.getMorpheConfig()
+	config.EnumHooks = enumHooks
 
 	enum0 := yaml.Enum{
 		Name: "",
@@ -640,7 +642,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_FailureHook() {
 		},
 	}
 
-	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(enumHooks, config, enum0)
+	lookupTable, enumErr := compile.MorpheEnumToPSQLTable(config, enum0)
 
 	suite.ErrorIs(failureErr, yaml.ErrNoMorpheEnumName)
 	suite.ErrorContains(enumErr, "compile enum failure hook error")

@@ -3,6 +3,7 @@ package compile
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/kaloseia/clone"
 	"github.com/kaloseia/go-util/core"
@@ -105,9 +106,20 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	indices := getIndicesForForeignKeys(tableName, modelTable.ForeignKeys)
 	modelTable.Indices = indices
 
+	// Apply spec-compliant processing to the model table
+	addUniqueIndicesFromIdentifiers(&modelTable, model.Identifiers)
+	quoteReservedColumnNames(&modelTable)
+	ensureNamedForeignKeyConstraints(&modelTable)
+
 	junctionTables, junctionTablesErr := getJunctionTablesForForManyRelations(schema, r, model)
 	if junctionTablesErr != nil {
 		return nil, junctionTablesErr
+	}
+
+	// Process junction tables as well
+	for tableIdx := range junctionTables {
+		quoteReservedColumnNames(junctionTables[tableIdx])
+		ensureNamedForeignKeyConstraints(junctionTables[tableIdx])
 	}
 
 	tables := []*psqldef.Table{&modelTable}
@@ -210,7 +222,7 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 			column := psqldef.Column{
 				Name:       columnName,
 				Type:       columnType,
-				NotNull:    false,
+				NotNull:    true,
 				PrimaryKey: false,
 				Default:    "",
 			}
@@ -260,8 +272,8 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 				ColumnNames:    []string{columnName},
 				RefTableName:   refTableName,
 				RefColumnNames: []string{refColumnName},
-				OnDelete:       "CASCADE", // Using CASCADE as per the spec examples
-				OnUpdate:       "",        // Default behavior
+				OnDelete:       "CASCADE",
+				OnUpdate:       "",
 			}
 
 			foreignKeys = append(foreignKeys, foreignKey)
@@ -448,4 +460,100 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 	}
 
 	return junctionTables, nil
+}
+
+// addUniqueIndicesFromIdentifiers adds unique indices for model identifiers
+func addUniqueIndicesFromIdentifiers(table *psqldef.Table, identifiers map[string]yaml.ModelIdentifier) {
+	tableName := table.Name
+
+	// Add unique indices for identifiers
+	for idName, identifier := range identifiers {
+		if idName == "primary" {
+			continue
+		}
+		columnNames := make([]string, len(identifier.Fields))
+		for fieldIdx, field := range identifier.Fields {
+			columnNames[fieldIdx] = GetColumnNameFromField(field)
+		}
+
+		var indexName string
+		if len(columnNames) == 1 {
+			indexName = fmt.Sprintf("idx_%s_%s", tableName, columnNames[0])
+		} else {
+			indexName = fmt.Sprintf("idx_%s_%s", tableName, strings.Join(columnNames, "_"))
+		}
+
+		table.Indices = append(table.Indices, psqldef.Index{
+			Name:      indexName,
+			TableName: tableName,
+			Columns:   columnNames,
+			IsUnique:  true,
+		})
+	}
+}
+
+// quoteReservedColumnNames quotes column names that are PostgreSQL reserved words
+func quoteReservedColumnNames(table *psqldef.Table) {
+	reservedWords := map[string]bool{
+		"name":    true,
+		"type":    true,
+		"user":    true,
+		"case":    true,
+		"when":    true,
+		"then":    true,
+		"else":    true,
+		"end":     true,
+		"null":    true,
+		"true":    true,
+		"false":   true,
+		"select":  true,
+		"insert":  true,
+		"update":  true,
+		"delete":  true,
+		"from":    true,
+		"where":   true,
+		"group":   true,
+		"order":   true,
+		"limit":   true,
+		"offset":  true,
+		"join":    true,
+		"on":      true,
+		"using":   true,
+		"and":     true,
+		"or":      true,
+		"not":     true,
+		"between": true,
+		"alter":   true,
+		"table":   true,
+		"index":   true,
+		"unique":  true,
+		"primary": true,
+		"foreign": true,
+		"key":     true,
+	}
+
+	for idxIdx, idx := range table.Indices {
+		for colIdx, colName := range idx.Columns {
+			if reservedWords[colName] {
+				idx.Columns[colIdx] = fmt.Sprintf("\"%s\"", colName)
+				table.Indices[idxIdx] = idx
+			}
+		}
+	}
+}
+
+// ensureNamedForeignKeyConstraints ensures all foreign keys have proper names and CASCADE behavior
+func ensureNamedForeignKeyConstraints(table *psqldef.Table) {
+	for fkIdx, fk := range table.ForeignKeys {
+		if fk.Name == "" {
+			fk.Name = GetForeignKeyConstraintName(table.Name, fk.ColumnNames[0])
+			table.ForeignKeys[fkIdx] = fk
+		}
+
+		// Ensure CASCADE behavior as per spec
+		if fk.OnDelete == "" {
+			fk.OnDelete = "CASCADE"
+			table.ForeignKeys[fkIdx] = fk
+		}
+	}
 }
