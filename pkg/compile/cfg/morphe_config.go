@@ -4,6 +4,7 @@ package cfg
 type MorpheConfig struct {
 	MorpheModelsConfig
 	MorpheEnumsConfig
+	MorpheStructuresConfig
 }
 
 // Default schema
@@ -24,6 +25,11 @@ func (config MorpheConfig) Validate() error {
 		return enumsErr
 	}
 
+	structuresErr := config.MorpheStructuresConfig.Validate()
+	if structuresErr != nil {
+		return structuresErr
+	}
+
 	return nil
 }
 
@@ -32,6 +38,13 @@ func DefaultMorpheConfig() MorpheConfig {
 	return MorpheConfig{
 		MorpheModelsConfig: MorpheModelsConfig{
 			Schema: DefaultSchema,
+		},
+		MorpheEnumsConfig: MorpheEnumsConfig{
+			Schema: DefaultSchema,
+		},
+		MorpheStructuresConfig: MorpheStructuresConfig{
+			Schema:            DefaultSchema,
+			EnablePersistence: false,
 		},
 	}
 }

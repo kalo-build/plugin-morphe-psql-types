@@ -61,10 +61,11 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 				Schema:       "public",
 				UseBigSerial: false,
 			},
-			// MorpheStructuresConfig: cfg.MorpheStructuresConfig{
-			// 	Schema: "public",
-			// 	UseBigSerial: false,
-			// },
+			MorpheStructuresConfig: cfg.MorpheStructuresConfig{
+				Schema:            "public",
+				UseBigSerial:      false,
+				EnablePersistence: true,
+			},
 			MorpheEnumsConfig: cfg.MorpheEnumsConfig{
 				Schema:       "public",
 				UseBigSerial: false,
@@ -79,10 +80,10 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 			TargetDirPath: workingDirPath + "/models",
 		},
 
-		// StructureWriter: &compile.MorpheTableFileWriter{
-		// 	Type:          compile.MorpheTableTypeStructures,
-		// 	TargetDirPath: workingDirPath + "/structures",
-		// },
+		StructureWriter: &compile.MorpheTableFileWriter{
+			Type:          compile.MorpheTableTypeStructures,
+			TargetDirPath: workingDirPath + "/structures",
+		},
 
 		EnumWriter: &compile.MorpheTableFileWriter{
 			Type:          compile.MorpheTableTypeEnums,
@@ -132,14 +133,15 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 	suite.FileExists(enumPath1)
 	suite.FileEquals(enumPath1, gtEnumPath1)
 
-	// structuresDirPath := workingDirPath + "/structures"
-	// gtStructuresDirPath := suite.TestGroundTruthDirPath + "/structures"
-	// suite.DirExists(structuresDirPath)
+	// Test structure persistence
+	structuresDirPath := workingDirPath + "/structures"
+	gtStructuresDirPath := suite.TestGroundTruthDirPath + "/structures"
+	suite.DirExists(structuresDirPath)
 
-	// structurePath0 := structuresDirPath + "/address.go"
-	// gtStructurePath0 := gtStructuresDirPath + "/address.go"
-	// suite.FileExists(structurePath0)
-	// suite.FileEquals(structurePath0, gtStructurePath0)
+	structurePath0 := structuresDirPath + "/morphe_structures.sql"
+	gtStructurePath0 := gtStructuresDirPath + "/morphe_structures.sql"
+	suite.FileExists(structurePath0)
+	suite.FileEquals(structurePath0, gtStructurePath0)
 
 	// entitiesDirPath := workingDirPath + "/entities"
 	// gtEntitiesDirPath := suite.TestGroundTruthDirPath + "/entities"

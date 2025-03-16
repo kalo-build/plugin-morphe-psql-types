@@ -28,5 +28,23 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		return writeModelTablesErr
 	}
 
+	// Optionally compile structure table if enabled
+	if config.MorpheStructuresConfig.EnablePersistence {
+		// Check if structure writer is set
+		if config.StructureWriter == nil {
+			return ErrNoStructureWriter
+		}
+
+		structureTable, compileStructureErr := MorpheStructureToPSQLTable(config)
+		if compileStructureErr != nil {
+			return compileStructureErr
+		}
+
+		_, _, writeStructureErr := WriteStructureTableDefinition(config.WriteTableHooks, config.StructureWriter, structureTable)
+		if writeStructureErr != nil {
+			return writeStructureErr
+		}
+	}
+
 	return nil
 }
