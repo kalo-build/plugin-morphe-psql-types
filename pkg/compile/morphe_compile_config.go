@@ -20,6 +20,9 @@ type MorpheCompileConfig struct {
 	EnumWriter write.PSQLTableWriter
 	EnumHooks  hook.CompileMorpheEnum
 
+	StructureWriter write.PSQLTableWriter
+	StructureHooks  hook.CompileMorpheStructure
+
 	WriteTableHooks hook.WritePSQLTable
 }
 

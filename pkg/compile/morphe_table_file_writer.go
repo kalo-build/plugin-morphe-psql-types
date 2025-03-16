@@ -188,7 +188,7 @@ func (w *MorpheTableFileWriter) getIndexLines(tableDefinition *psqldef.Table) ([
 
 		indexType := ""
 		if index.Using != "" {
-			indexType = "USING " + index.Using
+			indexType = "USING " + index.Using + " "
 		}
 
 		unique := ""
