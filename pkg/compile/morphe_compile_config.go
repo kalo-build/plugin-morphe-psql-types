@@ -5,6 +5,7 @@ import (
 	rcfg "github.com/kaloseia/morphe-go/pkg/registry/cfg"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
 	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/write"
 )
 
 type MorpheCompileConfig struct {
@@ -13,8 +14,13 @@ type MorpheCompileConfig struct {
 
 	RegistryHooks r.LoadMorpheRegistryHooks
 
-	// ModelWriter write.GoStructWriter
-	ModelHooks hook.CompileMorpheModel
+	ModelWriter write.PSQLTableWriter
+	ModelHooks  hook.CompileMorpheModel
+
+	EnumWriter write.PSQLTableWriter
+	EnumHooks  hook.CompileMorpheEnum
+
+	WriteTableHooks hook.WritePSQLTable
 }
 
 func (config MorpheCompileConfig) Validate() error {

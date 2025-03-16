@@ -8,15 +8,25 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		return rErr
 	}
 
-	_, compileAllErr := AllMorpheModelsToPSQLTables(config, r) // allModelStructDefs
-	if compileAllErr != nil {
-		return compileAllErr
+	allEnumTables, compileAllEnumsErr := AllMorpheEnumsToPSQLTables(config, r)
+	if compileAllEnumsErr != nil {
+		return compileAllEnumsErr
 	}
 
-	// _, writeModelStructsErr := WriteAllModelStructDefinitions(config, allModelStructDefs)
-	// if writeModelStructsErr != nil {
-	// 	return writeModelStructsErr
-	// }
+	_, writeEnumTablesErr := WriteAllEnumTableDefinitions(config, allEnumTables)
+	if writeEnumTablesErr != nil {
+		return writeEnumTablesErr
+	}
+
+	allModelTables, compileAllModelsErr := AllMorpheModelsToPSQLTables(config, r)
+	if compileAllModelsErr != nil {
+		return compileAllModelsErr
+	}
+
+	_, writeModelTablesErr := WriteAllModelTableDefinitions(config, allModelTables)
+	if writeModelTablesErr != nil {
+		return writeModelTablesErr
+	}
 
 	return nil
 }

@@ -10,6 +10,7 @@ type Table struct {
 	Indices           []Index
 	ForeignKeys       []ForeignKey
 	UniqueConstraints []UniqueConstraint
+	SeedData          []InsertStatement
 }
 
 // DeepClone creates a deep copy of the Table
@@ -21,6 +22,7 @@ func (t Table) DeepClone() Table {
 		Indices:           clone.DeepCloneSlice(t.Indices),
 		ForeignKeys:       clone.DeepCloneSlice(t.ForeignKeys),
 		UniqueConstraints: clone.DeepCloneSlice(t.UniqueConstraints),
+		SeedData:          clone.DeepCloneSlice(t.SeedData),
 	}
 
 	return tableCopy

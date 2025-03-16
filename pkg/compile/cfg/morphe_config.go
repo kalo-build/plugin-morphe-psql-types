@@ -3,6 +3,7 @@ package cfg
 // MorpheConfig is the main configuration for PostgreSQL compilation
 type MorpheConfig struct {
 	MorpheModelsConfig
+	MorpheEnumsConfig
 }
 
 // Default schema
@@ -16,6 +17,11 @@ func (config MorpheConfig) Validate() error {
 	modelsErr := config.MorpheModelsConfig.Validate()
 	if modelsErr != nil {
 		return modelsErr
+	}
+
+	enumsErr := config.MorpheEnumsConfig.Validate()
+	if enumsErr != nil {
+		return enumsErr
 	}
 
 	return nil

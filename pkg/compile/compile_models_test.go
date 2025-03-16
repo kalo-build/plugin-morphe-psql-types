@@ -26,8 +26,13 @@ func (suite *CompileModelsTestSuite) getMorpheConfig() cfg.MorpheConfig {
 		Schema:       "public",
 		UseBigSerial: false,
 	}
+	enumsConfig := cfg.MorpheEnumsConfig{
+		Schema:       "public",
+		UseBigSerial: false,
+	}
 	return cfg.MorpheConfig{
 		MorpheModelsConfig: modelsConfig,
+		MorpheEnumsConfig:  enumsConfig,
 	}
 }
 
@@ -38,12 +43,6 @@ func (suite *CompileModelsTestSuite) getCompileConfig() compile.MorpheCompileCon
 		ModelHooks:   hook.CompileMorpheModel{},
 	}
 }
-
-// func (suite *CompileModelsTestSuite) getCompileConfigWithHooks(hooks hook.CompileMorpheModel) compile.MorpheCompileConfig {
-// 	config := suite.getCompileConfig()
-// 	config.ModelHooks = hooks
-// 	return config
-// }
 
 func (suite *CompileModelsTestSuite) SetupTest() {
 }
@@ -194,7 +193,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables() {
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_UseBigSerial() {
 	config := suite.getCompileConfig()
-	config.UseBigSerial = true
+	config.MorpheModelsConfig.UseBigSerial = true
 
 	model0 := yaml.Model{
 		Name: "Basic",
@@ -256,7 +255,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_UseBigSerial() 
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_NoSchema() {
 	config := suite.getCompileConfig()
-	config.Schema = ""
+	config.MorpheModelsConfig.Schema = ""
 
 	model0 := yaml.Model{
 		Name: "Basic",
@@ -1009,7 +1008,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_StartHook_Succe
 			if featureFlag != "otherName" {
 				return config, model, nil
 			}
-			config.UseBigSerial = true
+			config.MorpheModelsConfig.UseBigSerial = true
 			model.Name = model.Name + "CHANGED"
 			delete(model.Fields, "Float")
 			return config, model, nil
@@ -1446,5 +1445,81 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_FailureHook_NoS
 	suite.Nil(allTables)
 }
 
-// TODO: Test cases
-// _EnumField
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_EnumField() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name: "Basic",
+		Fields: map[string]yaml.ModelField{
+			"AutoIncrement": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Nationality": {
+				Type: "Nationality",
+			},
+			"UUID": {
+				Type: yaml.ModelFieldTypeUUID,
+				Attributes: []string{
+					"immutable",
+				},
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"UUID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	enum0 := yaml.Enum{
+		Name: "Nationality",
+		Type: yaml.EnumTypeString,
+		Entries: map[string]any{
+			"US": "American",
+			"DE": "German",
+			"FR": "French",
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetEnum("Nationality", enum0)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+	suite.Equal(table0.Name, "basics")
+
+	columns0 := table0.Columns
+	suite.Len(columns0, 3)
+
+	column00 := columns0[0]
+	suite.Equal(column00.Name, "auto_increment")
+	suite.Equal(column00.Type, psqldef.PSQLTypeSerial)
+
+	column01 := columns0[1]
+	suite.Equal(column01.Name, "nationality_id")
+	suite.Equal(column01.Type, psqldef.PSQLTypeInteger)
+	suite.True(column01.NotNull)
+
+	column02 := columns0[2]
+	suite.Equal(column02.Name, "uuid")
+	suite.Equal(column02.Type, psqldef.PSQLTypeUUID)
+	suite.True(column02.PrimaryKey)
+
+	foreignKeys0 := table0.ForeignKeys
+	suite.Len(foreignKeys0, 1)
+
+	foreignKey0 := foreignKeys0[0]
+	suite.Equal(foreignKey0.Schema, config.MorpheConfig.MorpheModelsConfig.Schema)
+	suite.Equal(foreignKey0.Name, "fk_basics_nationality_id")
+	suite.Equal(foreignKey0.TableName, "basics")
+	suite.Equal(foreignKey0.ColumnNames, []string{"nationality_id"})
+	suite.Equal(foreignKey0.RefTableName, "nationalities")
+	suite.Equal(foreignKey0.RefColumnNames, []string{"id"})
+}
