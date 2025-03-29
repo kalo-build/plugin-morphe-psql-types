@@ -70,9 +70,10 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 				Schema:       "public",
 				UseBigSerial: false,
 			},
-			// MorpheEntitiesConfig: cfg.MorpheEntitiesConfig{
-			// 	// 	Schema: "public",
-			// },
+			MorpheEntitiesConfig: cfg.MorpheEntitiesConfig{
+				Schema:         "public",
+				ViewNameSuffix: "_entities",
+			},
 		},
 
 		ModelWriter: &compile.MorpheTableFileWriter{
