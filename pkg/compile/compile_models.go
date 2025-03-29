@@ -5,16 +5,16 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kaloseia/clone"
-	"github.com/kaloseia/go-util/core"
-	"github.com/kaloseia/go-util/strcase"
-	"github.com/kaloseia/morphe-go/pkg/registry"
-	"github.com/kaloseia/morphe-go/pkg/yaml"
-	"github.com/kaloseia/morphe-go/pkg/yamlops"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/typemap"
+	"github.com/kalo-build/clone"
+	"github.com/kalo-build/go-util/core"
+	"github.com/kalo-build/go-util/strcase"
+	"github.com/kalo-build/morphe-go/pkg/registry"
+	"github.com/kalo-build/morphe-go/pkg/yaml"
+	"github.com/kalo-build/morphe-go/pkg/yamlops"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/typemap"
 )
 
 func AllMorpheModelsToPSQLTables(config MorpheCompileConfig, r *registry.Registry) (map[string][]*psqldef.Table, error) {
@@ -130,8 +130,8 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	return tables, nil
 }
 
-func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, tableName string, primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.Column, []psqldef.ForeignKey, error) {
-	columns := []psqldef.Column{}
+func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, tableName string, primaryID yaml.ModelIdentifier, modelFields map[string]yaml.ModelField) ([]psqldef.TableColumn, []psqldef.ForeignKey, error) {
+	columns := []psqldef.TableColumn{}
 	enumForeignKeys := []psqldef.ForeignKey{}
 
 	modelFieldNames := core.MapKeysSorted(modelFields)
@@ -141,7 +141,7 @@ func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typ
 
 		columnType, supported := typeMap[field.Type]
 		if supported {
-			column := psqldef.Column{
+			column := psqldef.TableColumn{
 				Name:       columnName,
 				Type:       columnType,
 				NotNull:    false,
@@ -172,7 +172,7 @@ func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typ
 		}
 		enumForeignKeys = append(enumForeignKeys, foreignKey)
 
-		column := psqldef.Column{
+		column := psqldef.TableColumn{
 			Name:       columnName,
 			Type:       psqldef.PSQLTypeInteger,
 			NotNull:    true,
@@ -185,8 +185,8 @@ func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typ
 	return columns, enumForeignKeys, nil
 }
 
-func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, relatedModels map[string]yaml.ModelRelation) ([]psqldef.Column, error) {
-	columns := []psqldef.Column{}
+func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFieldType]psqldef.PSQLType, relatedModels map[string]yaml.ModelRelation) ([]psqldef.TableColumn, error) {
+	columns := []psqldef.TableColumn{}
 
 	relatedModelNames := core.MapKeysSorted(relatedModels)
 	for _, relatedModelName := range relatedModelNames {
@@ -219,7 +219,7 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 				return nil, fmt.Errorf("morphe related model field '%s' has unsupported type '%s'", targetPrimaryIdName, targetPrimaryIdField.Type)
 			}
 
-			column := psqldef.Column{
+			column := psqldef.TableColumn{
 				Name:       columnName,
 				Type:       columnType,
 				NotNull:    true,
@@ -384,7 +384,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 			targetColumnName := GetForeignKeyColumnName(relatedModelName, relatedPrimaryIdName)
 
 			// Create columns
-			columns := []psqldef.Column{
+			columns := []psqldef.TableColumn{
 				{
 					Name:       "id",
 					Type:       psqldef.PSQLTypeSerial,

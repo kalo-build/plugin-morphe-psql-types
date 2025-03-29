@@ -1,12 +1,12 @@
 package psqldef
 
-import "github.com/kaloseia/clone"
+import "github.com/kalo-build/clone"
 
 // Table represents a PSQL table for a model
 type Table struct {
 	Schema            string
 	Name              string
-	Columns           []Column
+	Columns           []TableColumn
 	Indices           []Index
 	ForeignKeys       []ForeignKey
 	UniqueConstraints []UniqueConstraint

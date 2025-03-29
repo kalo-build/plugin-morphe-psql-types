@@ -1,9 +1,9 @@
 package hook
 
 import (
-	"github.com/kaloseia/morphe-go/pkg/yaml"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/morphe-go/pkg/yaml"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
 type CompileMorpheModel struct {

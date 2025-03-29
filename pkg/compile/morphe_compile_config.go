@@ -1,16 +1,17 @@
 package compile
 
 import (
-	r "github.com/kaloseia/morphe-go/pkg/registry"
-	rcfg "github.com/kaloseia/morphe-go/pkg/registry/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/write"
+	r "github.com/kalo-build/morphe-go/pkg/registry"
+	rcfg "github.com/kalo-build/morphe-go/pkg/registry/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/write"
 )
 
 type MorpheCompileConfig struct {
 	rcfg.MorpheLoadRegistryConfig
 	cfg.MorpheConfig
+	cfg.MorpheEntitiesConfig
 
 	RegistryHooks r.LoadMorpheRegistryHooks
 
@@ -22,6 +23,8 @@ type MorpheCompileConfig struct {
 
 	StructureWriter write.PSQLTableWriter
 	StructureHooks  hook.CompileMorpheStructure
+
+	EntityHooks hook.CompileMorpheEntity
 
 	WriteTableHooks hook.WritePSQLTable
 }
@@ -35,6 +38,11 @@ func (config MorpheCompileConfig) Validate() error {
 	morpheCfgErr := config.MorpheConfig.Validate()
 	if morpheCfgErr != nil {
 		return morpheCfgErr
+	}
+
+	entitiesCfgErr := config.MorpheEntitiesConfig.Validate()
+	if entitiesCfgErr != nil {
+		return entitiesCfgErr
 	}
 
 	return nil

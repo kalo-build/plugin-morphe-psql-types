@@ -1,6 +1,6 @@
 package compile
 
-import "github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+import "github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 
 // CompiledMorpheTables maps Morphe.Name -> MorpheTable.Name -> CompiledTable
 type CompiledMorpheTables map[string]map[string]CompiledTable

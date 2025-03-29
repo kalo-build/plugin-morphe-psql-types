@@ -1,10 +1,10 @@
 package compile
 
 import (
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/write"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/write"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
 // MorpheStructureToPSQLTable creates a standard structures table according to the spec
@@ -44,7 +44,7 @@ func createStandardStructureTable(config cfg.MorpheStructuresConfig) *psqldef.Ta
 	}
 
 	// Create columns
-	columns := []psqldef.Column{
+	columns := []psqldef.TableColumn{
 		{
 			Name:       "id",
 			Type:       idType,

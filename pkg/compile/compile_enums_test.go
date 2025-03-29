@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/kaloseia/morphe-go/pkg/yaml"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/morphe-go/pkg/yaml"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -502,7 +502,7 @@ func (suite *CompileEnumsTestSuite) TestMorpheEnumToPSQLTable_SuccessHook_Succes
 				return table, nil
 			}
 			table.Name = table.Name + "_changed"
-			table.Columns = append(table.Columns, psqldef.Column{
+			table.Columns = append(table.Columns, psqldef.TableColumn{
 				Name:    "description",
 				Type:    psqldef.PSQLTypeText,
 				NotNull: false,

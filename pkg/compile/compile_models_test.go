@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/kaloseia/morphe-go/pkg/registry"
-	"github.com/kaloseia/morphe-go/pkg/yaml"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/morphe-go/pkg/registry"
+	"github.com/kalo-build/morphe-go/pkg/yaml"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -1195,7 +1195,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_SuccessHook_Suc
 			}
 			for _, modelTablePtr := range allModelTables {
 				modelTablePtr.Name = modelTablePtr.Name + "_changed"
-				newColumns := []psqldef.Column{}
+				newColumns := []psqldef.TableColumn{}
 				for _, modelTableColumn := range modelTablePtr.Columns {
 					if modelTableColumn.Name == "float" {
 						continue

@@ -1,6 +1,6 @@
 package psqldef
 
-import "github.com/kaloseia/clone"
+import "github.com/kalo-build/clone"
 
 // ForeignKey represents a foreign key in a PSQL table
 type ForeignKey struct {

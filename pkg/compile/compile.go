@@ -1,6 +1,6 @@
 package compile
 
-import "github.com/kaloseia/morphe-go/pkg/registry"
+import "github.com/kalo-build/morphe-go/pkg/registry"
 
 func MorpheToPSQL(config MorpheCompileConfig) error {
 	r, rErr := registry.LoadMorpheRegistry(config.RegistryHooks, config.MorpheLoadRegistryConfig)

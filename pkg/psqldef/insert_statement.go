@@ -1,6 +1,6 @@
 package psqldef
 
-import "github.com/kaloseia/clone"
+import "github.com/kalo-build/clone"
 
 // InsertStatement represents a PSQL INSERT statement
 type InsertStatement struct {

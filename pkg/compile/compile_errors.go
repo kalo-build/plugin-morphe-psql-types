@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/kaloseia/morphe-go/pkg/yaml"
+	"github.com/kalo-build/morphe-go/pkg/yaml"
 )
 
 var ErrNoRegistry = errors.New("registry not initialized")

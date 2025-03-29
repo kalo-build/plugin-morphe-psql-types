@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kaloseia/go-util/core"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/sqlfile"
+	"github.com/kalo-build/go-util/core"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/sqlfile"
 )
 
 type MorpheTableFileWriter struct {
@@ -152,7 +152,7 @@ func (w *MorpheTableFileWriter) getCreateTableLines(tableDefinition *psqldef.Tab
 	return tableLines, nil
 }
 
-func (w *MorpheTableFileWriter) formatColumnDefinition(column psqldef.Column) string {
+func (w *MorpheTableFileWriter) formatColumnDefinition(column psqldef.TableColumn) string {
 	parts := []string{column.Name, column.Type.GetSyntax()}
 
 	if column.NotNull {
@@ -211,7 +211,7 @@ func (w *MorpheTableFileWriter) getSeedDataLines(tableDefinition *psqldef.Table)
 	}
 
 	// Create a column map for quick lookups
-	columnMap := make(map[string]psqldef.Column)
+	columnMap := make(map[string]psqldef.TableColumn)
 	for _, col := range tableDefinition.Columns {
 		columnMap[col.Name] = col
 	}
@@ -267,7 +267,7 @@ func (w *MorpheTableFileWriter) getSeedDataLines(tableDefinition *psqldef.Table)
 }
 
 // validateValueType checks if a value is compatible with the column type
-func (w *MorpheTableFileWriter) validateValueType(value any, column psqldef.Column) error {
+func (w *MorpheTableFileWriter) validateValueType(value any, column psqldef.TableColumn) error {
 	if value == nil {
 		if column.NotNull {
 			return fmt.Errorf("NULL value not allowed for NOT NULL column")

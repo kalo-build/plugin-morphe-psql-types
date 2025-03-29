@@ -1,8 +1,8 @@
 package hook
 
 import (
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/write"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/write"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
 type WritePSQLTable struct {

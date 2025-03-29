@@ -5,6 +5,7 @@ type MorpheConfig struct {
 	MorpheModelsConfig
 	MorpheEnumsConfig
 	MorpheStructuresConfig
+	MorpheEntitiesConfig
 }
 
 // Default schema
@@ -30,6 +31,11 @@ func (config MorpheConfig) Validate() error {
 		return structuresErr
 	}
 
+	entitiesErr := config.MorpheEntitiesConfig.Validate()
+	if entitiesErr != nil {
+		return entitiesErr
+	}
+
 	return nil
 }
 
@@ -45,6 +51,10 @@ func DefaultMorpheConfig() MorpheConfig {
 		MorpheStructuresConfig: MorpheStructuresConfig{
 			Schema:            DefaultSchema,
 			EnablePersistence: false,
+		},
+		MorpheEntitiesConfig: MorpheEntitiesConfig{
+			Schema:         DefaultSchema,
+			ViewNameSuffix: "_entities",
 		},
 	}
 }

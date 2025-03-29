@@ -2,7 +2,7 @@ package psqldef
 
 import (
 	"github.com/barkimedes/go-deepcopy"
-	"github.com/kaloseia/clone"
+	"github.com/kalo-build/clone"
 )
 
 // DeepClonePSQLTypeMap attempts to deep clone a map of PSQLTypes.

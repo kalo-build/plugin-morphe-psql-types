@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile"
 	"github.com/stretchr/testify/suite"
 )
 

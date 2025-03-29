@@ -1,7 +1,7 @@
 package psqldef
 
-// Column represents a column in a PSQL table
-type Column struct {
+// TableColumn represents a column in a PSQL table
+type TableColumn struct {
 	Name       string
 	Type       PSQLType
 	NotNull    bool
@@ -9,9 +9,9 @@ type Column struct {
 	Default    string
 }
 
-// DeepClone creates a deep copy of the Column
-func (c Column) DeepClone() Column {
-	columnCopy := Column{
+// DeepClone creates a deep copy of the TableColumn
+func (c TableColumn) DeepClone() TableColumn {
+	columnCopy := TableColumn{
 		Name:       c.Name,
 		Type:       DeepClonePSQLType(c.Type),
 		NotNull:    c.NotNull,

@@ -1,6 +1,6 @@
 package psqldef
 
-import "github.com/kaloseia/clone"
+import "github.com/kalo-build/clone"
 
 type PSQLTypeEnum struct {
 	Values []string

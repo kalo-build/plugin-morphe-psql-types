@@ -1,6 +1,6 @@
 package psqldef
 
-import "github.com/kaloseia/clone"
+import "github.com/kalo-build/clone"
 
 // UniqueConstraint represents a unique constraint in a PSQL table
 type UniqueConstraint struct {

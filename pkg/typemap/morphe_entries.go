@@ -1,8 +1,8 @@
 package typemap
 
 import (
-	"github.com/kaloseia/morphe-go/pkg/yaml"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/morphe-go/pkg/yaml"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
 var MorpheEnumEntryToPSQLEntryType = map[yaml.EnumType]psqldef.PSQLType{

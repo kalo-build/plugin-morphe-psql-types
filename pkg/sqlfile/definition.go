@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kaloseia/go-util/strcase"
+	"github.com/kalo-build/go-util/strcase"
 )
 
 func WriteSQLDefinitionFile(dirPath string, definitionName string, psqlFileContents string) ([]byte, error) {

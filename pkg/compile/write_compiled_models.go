@@ -1,11 +1,11 @@
 package compile
 
 import (
-	"github.com/kaloseia/clone"
-	"github.com/kaloseia/go-util/core"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/hook"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/write"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/clone"
+	"github.com/kalo-build/go-util/core"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/write"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
 func WriteAllModelTableDefinitions(config MorpheCompileConfig, allModelTableDefs map[string][]*psqldef.Table) (CompiledMorpheTables, error) {

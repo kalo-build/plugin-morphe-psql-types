@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/gertd/go-pluralize"
-	"github.com/kaloseia/go-util/strcase"
+	"github.com/kalo-build/go-util/strcase"
 )
 
 // PostgreSQL identifier length limit

@@ -7,11 +7,11 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/kaloseia/go-util/assertfile"
-	rcfg "github.com/kaloseia/morphe-go/pkg/registry/cfg"
-	"github.com/kaloseia/plugin-morphe-psql-types/internal/testutils"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile"
-	"github.com/kaloseia/plugin-morphe-psql-types/pkg/compile/cfg"
+	"github.com/kalo-build/go-util/assertfile"
+	rcfg "github.com/kalo-build/morphe-go/pkg/registry/cfg"
+	"github.com/kalo-build/plugin-morphe-psql-types/internal/testutils"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
 )
 
 type CompileTestSuite struct {
