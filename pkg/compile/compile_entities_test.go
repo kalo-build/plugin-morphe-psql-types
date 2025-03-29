@@ -19,17 +19,31 @@ func TestCompileEntitiesTestSuite(t *testing.T) {
 	suite.Run(t, new(CompileEntitiesTestSuite))
 }
 
-func (suite *CompileEntitiesTestSuite) getEntitiesConfig() cfg.MorpheEntitiesConfig {
-	return cfg.MorpheEntitiesConfig{
+func (suite *CompileEntitiesTestSuite) getMorpheConfig() cfg.MorpheConfig {
+	modelsConfig := cfg.MorpheModelsConfig{
+		Schema:       "public",
+		UseBigSerial: false,
+	}
+	enumsConfig := cfg.MorpheEnumsConfig{
+		Schema:       "public",
+		UseBigSerial: false,
+	}
+	entitiesConfig := cfg.MorpheEntitiesConfig{
 		Schema:         "public",
 		ViewNameSuffix: "_entities",
+	}
+
+	return cfg.MorpheConfig{
+		MorpheModelsConfig:   modelsConfig,
+		MorpheEnumsConfig:    enumsConfig,
+		MorpheEntitiesConfig: entitiesConfig,
 	}
 }
 
 func (suite *CompileEntitiesTestSuite) getCompileConfig() compile.MorpheCompileConfig {
 	return compile.MorpheCompileConfig{
-		MorpheEntitiesConfig: suite.getEntitiesConfig(),
-		EntityHooks:          hook.CompileMorpheEntity{},
+		MorpheConfig: suite.getMorpheConfig(),
+		EntityHooks:  hook.CompileMorpheEntity{},
 	}
 }
 
@@ -163,51 +177,52 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView() {
 	suite.Equal("users", view.FromTable)
 
 	suite.Len(view.Columns, 8)
+
 	column0 := view.Columns[0]
-	suite.Equal(column0.Name, "uuid")
+	suite.Equal(column0.Name, "auto_increment")
 	suite.Equal(column0.Alias, "")
-	suite.Equal(column0.SourceRef, "users.uuid")
+	suite.Equal(column0.SourceRef, "children.auto_increment")
 
 	column1 := view.Columns[1]
-	suite.Equal(column1.Name, "auto_increment")
+	suite.Equal(column1.Name, "boolean")
 	suite.Equal(column1.Alias, "")
-	suite.Equal(column1.SourceRef, "children.auto_increment")
+	suite.Equal(column1.SourceRef, "children.boolean")
 
 	column2 := view.Columns[2]
-	suite.Equal(column2.Name, "boolean")
+	suite.Equal(column2.Name, "date")
 	suite.Equal(column2.Alias, "")
-	suite.Equal(column2.SourceRef, "children.boolean")
+	suite.Equal(column2.SourceRef, "children.date")
 
 	column3 := view.Columns[3]
-	suite.Equal(column3.Name, "date")
+	suite.Equal(column3.Name, "float")
 	suite.Equal(column3.Alias, "")
-	suite.Equal(column3.SourceRef, "children.date")
+	suite.Equal(column3.SourceRef, "children.float")
 
 	column4 := view.Columns[4]
-	suite.Equal(column4.Name, "float")
+	suite.Equal(column4.Name, "integer")
 	suite.Equal(column4.Alias, "")
-	suite.Equal(column4.SourceRef, "children.float")
+	suite.Equal(column4.SourceRef, "children.integer")
 
 	column5 := view.Columns[5]
-	suite.Equal(column5.Name, "integer")
+	suite.Equal(column5.Name, "string")
 	suite.Equal(column5.Alias, "")
-	suite.Equal(column5.SourceRef, "children.integer")
+	suite.Equal(column5.SourceRef, "children.string")
 
 	column6 := view.Columns[6]
-	suite.Equal(column6.Name, "string")
+	suite.Equal(column6.Name, "time")
 	suite.Equal(column6.Alias, "")
-	suite.Equal(column6.SourceRef, "children.string")
+	suite.Equal(column6.SourceRef, "children.time")
 
 	column7 := view.Columns[7]
-	suite.Equal(column7.Name, "time")
+	suite.Equal(column7.Name, "uuid")
 	suite.Equal(column7.Alias, "")
-	suite.Equal(column7.SourceRef, "children.time")
+	suite.Equal(column7.SourceRef, "users.uuid")
 
 	suite.Equal(1, len(view.Joins))
 	join := view.Joins[0]
 	suite.Equal("children", join.Table)
 	suite.Equal("children", join.Alias)
-	suite.Equal("LEFT", join.Type)
+	suite.Equal("INNER", join.Type)
 
 	suite.Len(join.Conditions, 1)
 	joinCondition0 := join.Conditions[0]

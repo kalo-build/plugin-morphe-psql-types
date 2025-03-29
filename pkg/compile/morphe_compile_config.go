@@ -11,7 +11,6 @@ import (
 type MorpheCompileConfig struct {
 	rcfg.MorpheLoadRegistryConfig
 	cfg.MorpheConfig
-	cfg.MorpheEntitiesConfig
 
 	RegistryHooks r.LoadMorpheRegistryHooks
 

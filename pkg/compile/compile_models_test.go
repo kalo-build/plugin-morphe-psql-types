@@ -30,9 +30,14 @@ func (suite *CompileModelsTestSuite) getMorpheConfig() cfg.MorpheConfig {
 		Schema:       "public",
 		UseBigSerial: false,
 	}
+	entitiesConfig := cfg.MorpheEntitiesConfig{
+		Schema:         "public",
+		ViewNameSuffix: "_entities",
+	}
 	return cfg.MorpheConfig{
-		MorpheModelsConfig: modelsConfig,
-		MorpheEnumsConfig:  enumsConfig,
+		MorpheModelsConfig:   modelsConfig,
+		MorpheEnumsConfig:    enumsConfig,
+		MorpheEntitiesConfig: entitiesConfig,
 	}
 }
 
