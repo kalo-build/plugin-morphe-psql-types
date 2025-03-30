@@ -222,7 +222,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView() {
 	join := view.Joins[0]
 	suite.Equal("children", join.Table)
 	suite.Equal("children", join.Alias)
-	suite.Equal("INNER", join.Type)
+	suite.Equal("LEFT", join.Type)
 
 	suite.Len(join.Conditions, 1)
 	joinCondition0 := join.Conditions[0]

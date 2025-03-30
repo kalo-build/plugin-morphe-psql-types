@@ -150,7 +150,7 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 			return nil, fmt.Errorf("relationship %s not found in model %s", relatedModelName, modelName)
 		}
 
-		joinType := "INNER"
+		joinType := "LEFT"
 		// TODO: We can't just use uuid, we need to extract the primary identifier field from each.
 
 		rootPrimaryId, rootPrimaryIdExists := model.Identifiers["primary"]
