@@ -70,9 +70,10 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 				Schema:       "public",
 				UseBigSerial: false,
 			},
-			// MorpheEntitiesConfig: cfg.MorpheEntitiesConfig{
-			// 	// 	Schema: "public",
-			// },
+			MorpheEntitiesConfig: cfg.MorpheEntitiesConfig{
+				Schema:         "public",
+				ViewNameSuffix: "_entities",
+			},
 		},
 
 		ModelWriter: &compile.MorpheTableFileWriter{
@@ -90,10 +91,9 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 			TargetDirPath: workingDirPath + "/enums",
 		},
 
-		// EntityWriter: &compile.MorpheTableFileWriter{
-		// 	Type:          compile.MorpheTableTypeEntities,
-		// 	TargetDirPath: workingDirPath + "/entities",
-		// },
+		EntityWriter: &compile.MorpheViewFileWriter{
+			TargetDirPath: workingDirPath + "/entities",
+		},
 	}
 
 	compileErr := compile.MorpheToPSQL(config)
@@ -143,17 +143,17 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 	suite.FileExists(structurePath0)
 	suite.FileEquals(structurePath0, gtStructurePath0)
 
-	// entitiesDirPath := workingDirPath + "/entities"
-	// gtEntitiesDirPath := suite.TestGroundTruthDirPath + "/entities"
-	// suite.DirExists(entitiesDirPath)
+	entitiesDirPath := workingDirPath + "/entities"
+	gtEntitiesDirPath := suite.TestGroundTruthDirPath + "/entities"
+	suite.DirExists(entitiesDirPath)
 
-	// entityPath0 := entitiesDirPath + "/company.go"
-	// gtEntityPath0 := gtEntitiesDirPath + "/company.go"
-	// suite.FileExists(entityPath0)
-	// suite.FileEquals(entityPath0, gtEntityPath0)
+	entityPath0 := entitiesDirPath + "/company_entities.sql"
+	gtEntityPath0 := gtEntitiesDirPath + "/company_entities.sql"
+	suite.FileExists(entityPath0)
+	suite.FileEquals(entityPath0, gtEntityPath0)
 
-	// entityPath1 := entitiesDirPath + "/person.go"
-	// gtEntityPath1 := gtEntitiesDirPath + "/person.go"
-	// suite.FileExists(entityPath1)
-	// suite.FileEquals(entityPath1, gtEntityPath1)
+	entityPath1 := entitiesDirPath + "/person_entities.sql"
+	gtEntityPath1 := gtEntitiesDirPath + "/person_entities.sql"
+	suite.FileExists(entityPath1)
+	suite.FileEquals(entityPath1, gtEntityPath1)
 }
