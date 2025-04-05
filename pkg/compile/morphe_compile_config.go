@@ -23,9 +23,11 @@ type MorpheCompileConfig struct {
 	StructureWriter write.PSQLTableWriter
 	StructureHooks  hook.CompileMorpheStructure
 
-	EntityHooks hook.CompileMorpheEntity
+	EntityWriter write.PSQLViewWriter
+	EntityHooks  hook.CompileMorpheEntity
 
 	WriteTableHooks hook.WritePSQLTable
+	WriteViewHooks  hook.WritePSQLView
 }
 
 func (config MorpheCompileConfig) Validate() error {

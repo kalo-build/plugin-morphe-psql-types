@@ -46,5 +46,15 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		}
 	}
 
+	allEntityViews, compileAllEntityViewsErr := AllMorpheEntitiesToPSQLViews(config, r)
+	if compileAllEntityViewsErr != nil {
+		return compileAllEntityViewsErr
+	}
+
+	_, writeEntityViewsErr := WriteAllEntityViewDefinitions(config, allEntityViews)
+	if writeEntityViewsErr != nil {
+		return writeEntityViewsErr
+	}
+
 	return nil
 }
