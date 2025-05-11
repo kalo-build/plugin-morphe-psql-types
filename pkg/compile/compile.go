@@ -1,6 +1,10 @@
 package compile
 
-import "github.com/kalo-build/morphe-go/pkg/registry"
+import (
+	"fmt"
+
+	"github.com/kalo-build/morphe-go/pkg/registry"
+)
 
 func MorpheToPSQL(config MorpheCompileConfig) error {
 	r, rErr := registry.LoadMorpheRegistry(config.RegistryHooks, config.MorpheLoadRegistryConfig)
@@ -8,29 +12,34 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		return rErr
 	}
 
-	allEnumTables, compileAllEnumsErr := AllMorpheEnumsToPSQLTables(config, r)
-	if compileAllEnumsErr != nil {
-		return compileAllEnumsErr
+	hasEnums := r.HasEnums()
+	if hasEnums {
+		allEnumTables, compileAllEnumsErr := AllMorpheEnumsToPSQLTables(config, r)
+		if compileAllEnumsErr != nil {
+			return compileAllEnumsErr
+		}
+
+		_, writeEnumTablesErr := WriteAllEnumTableDefinitions(config, allEnumTables)
+		if writeEnumTablesErr != nil {
+			return writeEnumTablesErr
+		}
 	}
 
-	_, writeEnumTablesErr := WriteAllEnumTableDefinitions(config, allEnumTables)
-	if writeEnumTablesErr != nil {
-		return writeEnumTablesErr
+	hasModels := r.HasModels()
+	if hasModels {
+		allModelTables, compileAllModelsErr := AllMorpheModelsToPSQLTables(config, r)
+		if compileAllModelsErr != nil {
+			return compileAllModelsErr
+		}
+
+		_, writeModelTablesErr := WriteAllModelTableDefinitions(config, allModelTables)
+		if writeModelTablesErr != nil {
+			return writeModelTablesErr
+		}
 	}
 
-	allModelTables, compileAllModelsErr := AllMorpheModelsToPSQLTables(config, r)
-	if compileAllModelsErr != nil {
-		return compileAllModelsErr
-	}
-
-	_, writeModelTablesErr := WriteAllModelTableDefinitions(config, allModelTables)
-	if writeModelTablesErr != nil {
-		return writeModelTablesErr
-	}
-
-	// Optionally compile structure table if enabled
-	if config.MorpheStructuresConfig.EnablePersistence {
-		// Check if structure writer is set
+	hasStructures := r.HasStructures()
+	if hasStructures {
 		if config.StructureWriter == nil {
 			return ErrNoStructureWriter
 		}
@@ -46,14 +55,21 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		}
 	}
 
-	allEntityViews, compileAllEntityViewsErr := AllMorpheEntitiesToPSQLViews(config, r)
-	if compileAllEntityViewsErr != nil {
-		return compileAllEntityViewsErr
-	}
+	hasEntities := r.HasEntities()
+	if hasEntities {
+		if !hasModels {
+			return fmt.Errorf("entities compilation requires models to be compiled")
+		}
 
-	_, writeEntityViewsErr := WriteAllEntityViewDefinitions(config, allEntityViews)
-	if writeEntityViewsErr != nil {
-		return writeEntityViewsErr
+		allEntityViews, compileAllEntityViewsErr := AllMorpheEntitiesToPSQLViews(config, r)
+		if compileAllEntityViewsErr != nil {
+			return compileAllEntityViewsErr
+		}
+
+		_, writeEntityViewsErr := WriteAllEntityViewDefinitions(config, allEntityViews)
+		if writeEntityViewsErr != nil {
+			return writeEntityViewsErr
+		}
 	}
 
 	return nil
