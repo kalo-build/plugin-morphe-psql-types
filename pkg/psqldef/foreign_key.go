@@ -8,6 +8,7 @@ type ForeignKey struct {
 	Name           string
 	TableName      string
 	ColumnNames    []string
+	RefSchema      string
 	RefTableName   string
 	RefColumnNames []string
 	OnDelete       string // e.g., "CASCADE", "SET NULL"
@@ -21,6 +22,7 @@ func (fk ForeignKey) DeepClone() ForeignKey {
 		Name:           fk.Name,
 		TableName:      fk.TableName,
 		ColumnNames:    clone.Slice(fk.ColumnNames),
+		RefSchema:      fk.RefSchema,
 		RefTableName:   fk.RefTableName,
 		RefColumnNames: clone.Slice(fk.RefColumnNames),
 		OnDelete:       fk.OnDelete,

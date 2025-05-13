@@ -118,7 +118,8 @@ func (w *MorpheTableFileWriter) getCreateTableLines(tableDefinition *psqldef.Tab
 				strings.Join(foreignKey.ColumnNames, ", "))
 			tableLines = append(tableLines, fkLine)
 
-			refLine := fmt.Sprintf("\t\tREFERENCES %s(%s)",
+			refLine := fmt.Sprintf("\t\tREFERENCES %s.%s (%s)",
+				foreignKey.RefSchema,
 				foreignKey.RefTableName,
 				strings.Join(foreignKey.RefColumnNames, ", "))
 
@@ -134,8 +135,9 @@ func (w *MorpheTableFileWriter) getCreateTableLines(tableDefinition *psqldef.Tab
 			tableLines = append(tableLines, refLine)
 		} else {
 			// Fallback to simple single-line format for unnamed constraints
-			fkLine := fmt.Sprintf("\tFOREIGN KEY (%s) REFERENCES %s (%s)",
+			fkLine := fmt.Sprintf("\tFOREIGN KEY (%s) REFERENCES %s.%s (%s)",
 				strings.Join(foreignKey.ColumnNames, ", "),
+				foreignKey.RefSchema,
 				foreignKey.RefTableName,
 				strings.Join(foreignKey.RefColumnNames, ", "))
 
@@ -184,6 +186,13 @@ func (w *MorpheTableFileWriter) getIndexLines(tableDefinition *psqldef.Table) ([
 		indexName := index.Name
 		if indexName == "" {
 			indexName = fmt.Sprintf("idx_%s_%s", tableDefinition.Name, strings.Join(index.Columns, "_"))
+		}
+
+		// Use index schema if available, otherwise use table schema
+		if index.Schema != "" {
+			indexName = index.Schema + "." + indexName
+		} else if tableDefinition.Schema != "" && !strings.Contains(indexName, ".") {
+			indexName = tableDefinition.Schema + "." + indexName
 		}
 
 		indexType := ""

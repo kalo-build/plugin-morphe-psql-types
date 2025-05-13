@@ -7,6 +7,7 @@ type View struct {
 	Schema      string
 	Name        string
 	Columns     []ViewColumn
+	FromSchema  string
 	FromTable   string
 	Joins       []JoinClause
 	WhereClause string
@@ -18,6 +19,7 @@ func (v View) DeepClone() View {
 		Schema:      v.Schema,
 		Name:        v.Name,
 		Columns:     clone.DeepCloneSlice(v.Columns),
+		FromSchema:  v.FromSchema,
 		FromTable:   v.FromTable,
 		Joins:       clone.DeepCloneSlice(v.Joins),
 		WhereClause: v.WhereClause,

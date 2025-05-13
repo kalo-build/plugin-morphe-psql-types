@@ -78,11 +78,12 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 	tableName := Pluralize(strcase.ToSnakeCaseLower(entity.Name))
 
 	view := &psqldef.View{
-		Schema:    config.MorpheEntitiesConfig.Schema,
-		Name:      viewName,
-		FromTable: tableName,
-		Columns:   []psqldef.ViewColumn{},
-		Joins:     []psqldef.JoinClause{},
+		Schema:     config.MorpheEntitiesConfig.Schema,
+		Name:       viewName,
+		FromSchema: config.MorpheEntitiesConfig.Schema,
+		FromTable:  tableName,
+		Columns:    []psqldef.ViewColumn{},
+		Joins:      []psqldef.JoinClause{},
 	}
 
 	// Process entity fields to set up columns and joins
@@ -166,9 +167,10 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 		relatedPrimaryIdName := strcase.ToSnakeCaseLower(relatedPrimaryId.Fields[0])
 
 		joinClause := psqldef.JoinClause{
-			Type:  joinType,
-			Table: joinTable,
-			Alias: joinTable,
+			Type:   joinType,
+			Schema: config.MorpheModelsConfig.Schema,
+			Table:  joinTable,
+			Alias:  joinTable,
 			Conditions: []psqldef.JoinCondition{
 				{
 					LeftRef:  tableName + "." + rootPrimaryIdName,

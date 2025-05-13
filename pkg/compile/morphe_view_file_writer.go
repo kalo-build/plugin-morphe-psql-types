@@ -86,17 +86,26 @@ func (w *MorpheViewFileWriter) getCreateViewLines(viewDefinition *psqldef.View) 
 		return nil, fmt.Errorf("view has no source table")
 	}
 
+	fromSchema := viewDefinition.FromSchema
+	if fromSchema == "" {
+		fromSchema = "public"
+	}
+
 	fromTable := viewDefinition.FromTable
 
-	viewLines = append(viewLines, fmt.Sprintf("FROM %s", fromTable))
+	viewLines = append(viewLines, fmt.Sprintf("FROM %s.%s", fromSchema, fromTable))
 
 	for _, join := range viewDefinition.Joins {
 		joinTable := join.Table
 		if join.Alias != "" && join.Alias != join.Table {
 			joinTable += " AS " + join.Alias
 		}
+		joinSchema := join.Schema
+		if joinSchema == "" {
+			joinSchema = "public"
+		}
 
-		joinLine := fmt.Sprintf("%s JOIN %s", join.Type, joinTable)
+		joinLine := fmt.Sprintf("%s JOIN %s.%s", join.Type, joinSchema, joinTable)
 		viewLines = append(viewLines, joinLine)
 
 		if len(join.Conditions) > 0 {

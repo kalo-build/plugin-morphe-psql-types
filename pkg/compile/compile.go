@@ -12,8 +12,7 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		return rErr
 	}
 
-	hasEnums := r.HasEnums()
-	if hasEnums {
+	if r.HasEnums() {
 		allEnumTables, compileAllEnumsErr := AllMorpheEnumsToPSQLTables(config, r)
 		if compileAllEnumsErr != nil {
 			return compileAllEnumsErr
@@ -38,8 +37,7 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		}
 	}
 
-	hasStructures := r.HasStructures()
-	if hasStructures {
+	if r.HasStructures() {
 		if config.StructureWriter == nil {
 			return ErrNoStructureWriter
 		}
@@ -55,8 +53,7 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		}
 	}
 
-	hasEntities := r.HasEntities()
-	if hasEntities {
+	if r.HasEntities() {
 		if !hasModels {
 			return fmt.Errorf("entities compilation requires models to be compiled")
 		}

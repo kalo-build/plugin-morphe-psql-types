@@ -103,7 +103,7 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	}
 	modelTable.ForeignKeys = append(modelTable.ForeignKeys, relationForeignKeys...)
 
-	indices := getIndicesForForeignKeys(tableName, modelTable.ForeignKeys)
+	indices := getIndicesForForeignKeys(schema, tableName, modelTable.ForeignKeys)
 	modelTable.Indices = indices
 
 	// Apply spec-compliant processing to the model table
@@ -165,6 +165,7 @@ func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typ
 			Name:           GetForeignKeyConstraintName(tableName, columnName),
 			TableName:      tableName,
 			ColumnNames:    []string{columnName},
+			RefSchema:      config.MorpheEnumsConfig.Schema,
 			RefTableName:   enumTableName,
 			RefColumnNames: []string{"id"},
 			OnDelete:       "CASCADE",
@@ -270,6 +271,7 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 				Name:           GetForeignKeyConstraintName(tableName, columnName),
 				TableName:      tableName,
 				ColumnNames:    []string{columnName},
+				RefSchema:      schema,
 				RefTableName:   refTableName,
 				RefColumnNames: []string{refColumnName},
 				OnDelete:       "CASCADE",
@@ -283,12 +285,13 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 	return foreignKeys, nil
 }
 
-func getIndicesForForeignKeys(tableName string, foreignKeys []psqldef.ForeignKey) []psqldef.Index {
+func getIndicesForForeignKeys(schema string, tableName string, foreignKeys []psqldef.ForeignKey) []psqldef.Index {
 	indices := []psqldef.Index{}
 
 	for _, fk := range foreignKeys {
 		for _, columnName := range fk.ColumnNames {
 			index := psqldef.Index{
+				Schema:    schema,
 				Name:      GetIndexName(tableName, columnName),
 				TableName: tableName,
 				Columns:   []string{columnName},
@@ -407,6 +410,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, modelName, primaryIdName),
 					TableName:    junctionTableName,
 					ColumnNames:  []string{sourceColumnName},
+					RefSchema:    schema,
 					RefTableName: tableName,
 					RefColumnNames: []string{
 						GetColumnNameFromField(primaryIdName),
@@ -418,6 +422,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, relatedModelName, relatedPrimaryIdName),
 					TableName:    junctionTableName,
 					ColumnNames:  []string{targetColumnName},
+					RefSchema:    schema,
 					RefTableName: GetTableNameFromModel(relatedModelName),
 					RefColumnNames: []string{
 						GetColumnNameFromField(relatedPrimaryIdName),
@@ -443,7 +448,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 			}
 
 			// Create indices for foreign keys
-			indices := getIndicesForForeignKeys(junctionTableName, foreignKeys)
+			indices := getIndicesForForeignKeys(schema, junctionTableName, foreignKeys)
 
 			// Create junction table
 			junctionTable := &psqldef.Table{

@@ -482,6 +482,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne(
 	suite.Len(foreignKey0.ColumnNames, 1)
 	fkColumn00 := foreignKey0.ColumnNames[0]
 	suite.Equal("basic_parent_id", fkColumn00)
+	suite.Equal("public", foreignKey0.RefSchema)
 	suite.Equal("basic_parents", foreignKey0.RefTableName)
 	suite.Len(foreignKey0.RefColumnNames, 1)
 	fkColumnRef00 := foreignKey0.RefColumnNames[0]
@@ -492,6 +493,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne(
 	suite.Len(table0.Indices, 1)
 	index0 := table0.Indices[0]
 	suite.Equal("idx_basics_basic_parent_id", index0.Name)
+	suite.Equal("public", index0.Schema)
 	suite.Equal("basics", index0.TableName)
 	suite.Len(index0.Columns, 1)
 	suite.Equal("basic_parent_id", index0.Columns[0])
@@ -622,6 +624,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(foreignKey10.ColumnNames, 1)
 	fkColumn10 := foreignKey10.ColumnNames[0]
 	suite.Equal("basic_id", fkColumn10)
+	suite.Equal("public", foreignKey10.RefSchema)
 	suite.Equal("basics", foreignKey10.RefTableName)
 	suite.Len(foreignKey10.RefColumnNames, 1)
 	fkColumnRef10 := foreignKey10.RefColumnNames[0]
@@ -636,6 +639,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(foreignKey11.ColumnNames, 1)
 	fkColumn11 := foreignKey11.ColumnNames[0]
 	suite.Equal("basic_parent_id", fkColumn11)
+	suite.Equal("public", foreignKey11.RefSchema)
 	suite.Equal("basic_parents", foreignKey11.RefTableName)
 	suite.Len(foreignKey11.RefColumnNames, 1)
 	fkColumnRef11 := foreignKey11.RefColumnNames[0]
@@ -646,6 +650,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(table1.Indices, 2)
 	index10 := table1.Indices[0]
 	suite.Equal("idx_basic_basic_parents_basic_id", index10.Name)
+	suite.Equal("public", index10.Schema)
 	suite.Equal("basic_basic_parents", index10.TableName)
 	suite.Len(index10.Columns, 1)
 	suite.Equal("basic_id", index10.Columns[0])
@@ -653,6 +658,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 
 	index11 := table1.Indices[1]
 	suite.Equal("idx_basic_basic_parents_basic_parent_id", index11.Name)
+	suite.Equal("public", index11.Schema)
 	suite.Equal("basic_basic_parents", index11.TableName)
 	suite.Len(index11.Columns, 1)
 	suite.Equal("basic_parent_id", index11.Columns[0])
@@ -789,6 +795,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(foreignKey10.ColumnNames, 1)
 	fkColumn10 := foreignKey10.ColumnNames[0]
 	suite.Equal("basic_id", fkColumn10)
+	suite.Equal("public", foreignKey10.RefSchema)
 	suite.Equal("basics", foreignKey10.RefTableName)
 	suite.Len(foreignKey10.RefColumnNames, 1)
 	fkColumnRef10 := foreignKey10.RefColumnNames[0]
@@ -803,6 +810,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(foreignKey11.ColumnNames, 1)
 	fkColumn11 := foreignKey11.ColumnNames[0]
 	suite.Equal("basic_parent_id", fkColumn11)
+	suite.Equal("public", foreignKey11.RefSchema)
 	suite.Equal("basic_parents", foreignKey11.RefTableName)
 	suite.Len(foreignKey11.RefColumnNames, 1)
 	fkColumnRef11 := foreignKey11.RefColumnNames[0]
@@ -813,6 +821,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(table1.Indices, 2)
 	index10 := table1.Indices[0]
 	suite.Equal("idx_basic_basic_parents_basic_id", index10.Name)
+	suite.Equal("public", index10.Schema)
 	suite.Equal("basic_basic_parents", index10.TableName)
 	suite.Len(index10.Columns, 1)
 	suite.Equal("basic_id", index10.Columns[0])
@@ -820,6 +829,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 
 	index11 := table1.Indices[1]
 	suite.Equal("idx_basic_basic_parents_basic_parent_id", index11.Name)
+	suite.Equal("public", index11.Schema)
 	suite.Equal("basic_basic_parents", index11.TableName)
 	suite.Len(index11.Columns, 1)
 	suite.Equal("basic_parent_id", index11.Columns[0])
@@ -1525,6 +1535,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_EnumField() {
 	suite.Equal(foreignKey0.Name, "fk_basics_nationality_id")
 	suite.Equal(foreignKey0.TableName, "basics")
 	suite.Equal(foreignKey0.ColumnNames, []string{"nationality_id"})
+	suite.Equal(foreignKey0.RefSchema, "public")
 	suite.Equal(foreignKey0.RefTableName, "nationalities")
 	suite.Equal(foreignKey0.RefColumnNames, []string{"id"})
 }

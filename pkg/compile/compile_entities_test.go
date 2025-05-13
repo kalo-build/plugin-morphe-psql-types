@@ -176,6 +176,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView() {
 	suite.Equal("public", view.Schema)
 	suite.Equal("user_entities", view.Name)
 
+	suite.Equal("public", view.FromSchema)
 	suite.Equal("users", view.FromTable)
 
 	suite.Len(view.Columns, 8)
@@ -222,6 +223,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView() {
 
 	suite.Equal(1, len(view.Joins))
 	join := view.Joins[0]
+	suite.Equal("public", join.Schema)
 	suite.Equal("children", join.Table)
 	suite.Equal("children", join.Alias)
 	suite.Equal("LEFT", join.Type)
@@ -288,6 +290,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_AlternativeSuf
 	suite.Equal("public", view.Schema)
 	suite.Equal("user_alt", view.Name)
 
+	suite.Equal("public", view.FromSchema)
 	suite.Equal("users", view.FromTable)
 
 	suite.Len(view.Columns, 2)
@@ -519,6 +522,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_EnumField() {
 	suite.Equal("public", view.Schema)
 	suite.Equal("user_entities", view.Name)
 
+	suite.Equal("public", view.FromSchema)
 	suite.Equal("users", view.FromTable)
 
 	suite.Len(view.Columns, 2)
@@ -626,6 +630,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_StartHook_Succ
 	suite.Equal("public", view.Schema)
 	suite.Equal("basic_hook_modified", view.Name)
 
+	suite.Equal("public", view.FromSchema)
 	suite.Equal("basics", view.FromTable)
 	suite.Len(view.Columns, 1)
 
@@ -748,6 +753,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_SuccessHook_Su
 	suite.Equal("public", view.Schema)
 	suite.Equal("basic_entities_modified", view.Name)
 
+	suite.Equal("public", view.FromSchema)
 	suite.Equal("basics", view.FromTable)
 	suite.Len(view.Columns, 1)
 
