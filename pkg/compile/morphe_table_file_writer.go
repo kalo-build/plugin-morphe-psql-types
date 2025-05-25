@@ -188,13 +188,6 @@ func (w *MorpheTableFileWriter) getIndexLines(tableDefinition *psqldef.Table) ([
 			indexName = fmt.Sprintf("idx_%s_%s", tableDefinition.Name, strings.Join(index.Columns, "_"))
 		}
 
-		// Use index schema if available, otherwise use table schema
-		if index.Schema != "" {
-			indexName = index.Schema + "." + indexName
-		} else if tableDefinition.Schema != "" && !strings.Contains(indexName, ".") {
-			indexName = tableDefinition.Schema + "." + indexName
-		}
-
 		indexType := ""
 		if index.Using != "" {
 			indexType = "USING " + index.Using + " "

@@ -7,5 +7,5 @@ SELECT
 	companies.id,
 	companies.name,
 	companies.tax_id
-FROM companies;
+FROM public.companies;
 

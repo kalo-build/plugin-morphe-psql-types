@@ -8,7 +8,7 @@ SELECT
 	people.id,
 	people.last_name,
 	people.nationality
-FROM people
-LEFT JOIN contact_infos
+FROM public.people
+LEFT JOIN public.contact_infos
 	ON people.id = contact_infos.id;
 

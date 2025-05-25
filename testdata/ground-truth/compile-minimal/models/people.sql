@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS public.people (
 	nationality_id INTEGER NOT NULL,
 	company_id INTEGER NOT NULL,
 	CONSTRAINT fk_people_nationality_id FOREIGN KEY (nationality_id)
-		REFERENCES nationalities(id)
+		REFERENCES public.nationalities (id)
 		ON DELETE CASCADE,
 	CONSTRAINT fk_people_company_id FOREIGN KEY (company_id)
-		REFERENCES companies(id)
+		REFERENCES public.companies (id)
 		ON DELETE CASCADE
 );
 

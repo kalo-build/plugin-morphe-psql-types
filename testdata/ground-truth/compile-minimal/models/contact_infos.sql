@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.contact_infos (
 	id SERIAL PRIMARY KEY,
 	person_id INTEGER NOT NULL,
 	CONSTRAINT fk_contact_infos_person_id FOREIGN KEY (person_id)
-		REFERENCES people(id)
+		REFERENCES public.people (id)
 		ON DELETE CASCADE
 );
 

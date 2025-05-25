@@ -493,7 +493,6 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne(
 	suite.Len(table0.Indices, 1)
 	index0 := table0.Indices[0]
 	suite.Equal("idx_basics_basic_parent_id", index0.Name)
-	suite.Equal("public", index0.Schema)
 	suite.Equal("basics", index0.TableName)
 	suite.Len(index0.Columns, 1)
 	suite.Equal("basic_parent_id", index0.Columns[0])
@@ -650,7 +649,6 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(table1.Indices, 2)
 	index10 := table1.Indices[0]
 	suite.Equal("idx_basic_basic_parents_basic_id", index10.Name)
-	suite.Equal("public", index10.Schema)
 	suite.Equal("basic_basic_parents", index10.TableName)
 	suite.Len(index10.Columns, 1)
 	suite.Equal("basic_id", index10.Columns[0])
@@ -658,7 +656,6 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 
 	index11 := table1.Indices[1]
 	suite.Equal("idx_basic_basic_parents_basic_parent_id", index11.Name)
-	suite.Equal("public", index11.Schema)
 	suite.Equal("basic_basic_parents", index11.TableName)
 	suite.Len(index11.Columns, 1)
 	suite.Equal("basic_parent_id", index11.Columns[0])
@@ -821,7 +818,6 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(table1.Indices, 2)
 	index10 := table1.Indices[0]
 	suite.Equal("idx_basic_basic_parents_basic_id", index10.Name)
-	suite.Equal("public", index10.Schema)
 	suite.Equal("basic_basic_parents", index10.TableName)
 	suite.Len(index10.Columns, 1)
 	suite.Equal("basic_id", index10.Columns[0])
@@ -829,7 +825,6 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 
 	index11 := table1.Indices[1]
 	suite.Equal("idx_basic_basic_parents_basic_parent_id", index11.Name)
-	suite.Equal("public", index11.Schema)
 	suite.Equal("basic_basic_parents", index11.TableName)
 	suite.Len(index11.Columns, 1)
 	suite.Equal("basic_parent_id", index11.Columns[0])

@@ -291,7 +291,6 @@ func getIndicesForForeignKeys(schema string, tableName string, foreignKeys []psq
 	for _, fk := range foreignKeys {
 		for _, columnName := range fk.ColumnNames {
 			index := psqldef.Index{
-				Schema:    schema,
 				Name:      GetIndexName(tableName, columnName),
 				TableName: tableName,
 				Columns:   []string{columnName},
