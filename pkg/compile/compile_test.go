@@ -119,6 +119,21 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 	suite.FileExists(modelPath2)
 	suite.FileEquals(modelPath2, gtModelPath2)
 
+	modelPath3 := modelsDirPath + "/comments.sql"
+	gtModelPath3 := gtModelsDirPath + "/comments.sql"
+	suite.FileExists(modelPath3)
+	suite.FileEquals(modelPath3, gtModelPath3)
+
+	modelPath4 := modelsDirPath + "/tags.sql"
+	gtModelPath4 := gtModelsDirPath + "/tags.sql"
+	suite.FileExists(modelPath4)
+	suite.FileEquals(modelPath4, gtModelPath4)
+
+	modelPath5 := modelsDirPath + "/tag_taggables.sql"
+	gtModelPath5 := gtModelsDirPath + "/tag_taggables.sql"
+	suite.FileExists(modelPath5)
+	suite.FileEquals(modelPath5, gtModelPath5)
+
 	enumsDirPath := workingDirPath + "/enums"
 	gtEnumsDirPath := suite.TestGroundTruthDirPath + "/enums"
 	suite.DirExists(enumsDirPath)
@@ -156,4 +171,14 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 	gtEntityPath1 := gtEntitiesDirPath + "/person_entities.sql"
 	suite.FileExists(entityPath1)
 	suite.FileEquals(entityPath1, gtEntityPath1)
+
+	entityPath2 := entitiesDirPath + "/comment_entities.sql"
+	gtEntityPath2 := gtEntitiesDirPath + "/comment_entities.sql"
+	suite.FileExists(entityPath2)
+	suite.FileEquals(entityPath2, gtEntityPath2)
+
+	entityPath3 := entitiesDirPath + "/tag_entities.sql"
+	gtEntityPath3 := gtEntitiesDirPath + "/tag_entities.sql"
+	suite.FileExists(entityPath3)
+	suite.FileEquals(entityPath3, gtEntityPath3)
 }

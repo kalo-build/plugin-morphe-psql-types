@@ -1534,3 +1534,734 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_EnumField() {
 	suite.Equal(foreignKey0.RefTableName, "nationalities")
 	suite.Equal(foreignKey0.RefColumnNames, []string{"id"})
 }
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOnePoly() {
+	config := suite.getCompileConfig()
+
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	articleModel := yaml.Model{
+		Name: "Article",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"id":      {Type: yaml.ModelFieldTypeUUID},
+			"content": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Article"},
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+	r.SetModel("Article", articleModel)
+	r.SetModel("Comment", commentModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, commentModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table := allTables[0]
+	suite.Equal("comments", table.Name)
+
+	suite.Len(table.Columns, 4)
+
+	suite.Equal("content", table.Columns[0].Name)
+	suite.Equal("id", table.Columns[1].Name)
+
+	suite.Equal("commentable_type", table.Columns[2].Name)
+	suite.Equal(psqldef.PSQLTypeText, table.Columns[2].Type)
+	suite.True(table.Columns[2].NotNull)
+	suite.False(table.Columns[2].PrimaryKey)
+
+	suite.Equal("commentable_id", table.Columns[3].Name)
+	suite.Equal(psqldef.PSQLTypeText, table.Columns[3].Type)
+	suite.True(table.Columns[3].NotNull)
+	suite.False(table.Columns[3].PrimaryKey)
+
+	suite.Len(table.ForeignKeys, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOnePoly_LongRelationName() {
+	config := suite.getCompileConfig()
+
+	userModel := yaml.Model{
+		Name: "User",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	auditLogModel := yaml.Model{
+		Name: "AuditLog",
+		Fields: map[string]yaml.ModelField{
+			"id":     {Type: yaml.ModelFieldTypeUUID},
+			"action": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"AuditableResource": {
+				Type: "ForOnePoly",
+				For:  []string{"User", "Post"},
+			},
+		},
+	}
+
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("User", userModel)
+	r.SetModel("Post", postModel)
+	r.SetModel("AuditLog", auditLogModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, auditLogModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table := allTables[0]
+	suite.Equal("audit_logs", table.Name)
+
+	suite.Len(table.Columns, 4)
+
+	suite.Equal("action", table.Columns[0].Name)
+	suite.Equal("id", table.Columns[1].Name)
+
+	suite.Equal("auditable_resource_type", table.Columns[2].Name)
+	suite.Equal(psqldef.PSQLTypeText, table.Columns[2].Type)
+	suite.True(table.Columns[2].NotNull)
+	suite.False(table.Columns[2].PrimaryKey)
+
+	suite.Equal("auditable_resource_id", table.Columns[3].Name)
+	suite.Equal(psqldef.PSQLTypeText, table.Columns[3].Type)
+	suite.True(table.Columns[3].NotNull)
+	suite.False(table.Columns[3].PrimaryKey)
+
+	suite.Len(table.ForeignKeys, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForManyPoly() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"ID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Taggable": {
+				Type: "ForManyPoly",
+				For: []string{
+					"Post",
+					"Product",
+				},
+			},
+		},
+	}
+	model1 := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Title": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"ID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Tag": {
+				Type:    "HasManyPoly",
+				Through: "Taggable",
+			},
+		},
+	}
+	model2 := yaml.Model{
+		Name: "Product",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{
+					"ID",
+				},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Tag": {
+				Type:    "HasManyPoly",
+				Through: "Taggable",
+			},
+		},
+	}
+	r := registry.NewRegistry()
+	r.SetModel("Tag", model0)
+	r.SetModel("Post", model1)
+	r.SetModel("Product", model2)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 2)
+
+	table0 := allTables[0]
+
+	suite.Equal(config.MorpheConfig.MorpheModelsConfig.Schema, table0.Schema)
+	suite.Equal("tags", table0.Name)
+
+	columns0 := table0.Columns
+	suite.Len(columns0, 2)
+
+	columns00 := columns0[0]
+	suite.Equal("id", columns00.Name)
+	suite.Equal(psqldef.PSQLTypeSerial, columns00.Type)
+	suite.False(columns00.NotNull)
+	suite.True(columns00.PrimaryKey)
+	suite.Equal("", columns00.Default)
+
+	columns01 := columns0[1]
+	suite.Equal("name", columns01.Name)
+	suite.Equal(psqldef.PSQLTypeText, columns01.Type)
+	suite.False(columns01.NotNull)
+	suite.False(columns01.PrimaryKey)
+	suite.Equal("", columns01.Default)
+
+	suite.Len(table0.ForeignKeys, 0)
+	suite.Len(table0.Indices, 0)
+	suite.Len(table0.UniqueConstraints, 0)
+
+	// Polymorphic junction table tags <-> taggables
+	table1 := allTables[1]
+
+	suite.Equal(config.MorpheConfig.MorpheModelsConfig.Schema, table1.Schema)
+	suite.Equal("tag_taggables", table1.Name)
+
+	columns1 := table1.Columns
+	suite.Len(columns1, 4)
+
+	columns10 := columns1[0]
+	suite.Equal("id", columns10.Name)
+	suite.Equal(psqldef.PSQLTypeSerial, columns10.Type)
+	suite.False(columns10.NotNull)
+	suite.True(columns10.PrimaryKey)
+	suite.Equal("", columns10.Default)
+
+	columns11 := columns1[1]
+	suite.Equal("tag_id", columns11.Name)
+	suite.Equal(psqldef.PSQLTypeInteger, columns11.Type)
+	suite.False(columns11.NotNull)
+	suite.False(columns11.PrimaryKey)
+	suite.Equal("", columns11.Default)
+
+	columns12 := columns1[2]
+	suite.Equal("taggable_type", columns12.Name)
+	suite.Equal(psqldef.PSQLTypeText, columns12.Type)
+	suite.False(columns12.NotNull)
+	suite.False(columns12.PrimaryKey)
+	suite.Equal("", columns12.Default)
+
+	columns13 := columns1[3]
+	suite.Equal("taggable_id", columns13.Name)
+	suite.Equal(psqldef.PSQLTypeText, columns13.Type)
+	suite.False(columns13.NotNull)
+	suite.False(columns13.PrimaryKey)
+	suite.Equal("", columns13.Default)
+
+	// Should have one foreign key constraint (for the source model)
+	suite.Len(table1.ForeignKeys, 1)
+	foreignKey10 := table1.ForeignKeys[0]
+	suite.Equal("public", foreignKey10.Schema)
+	suite.Equal("fk_tag_taggables_tag_id", foreignKey10.Name)
+	suite.Equal("tag_taggables", foreignKey10.TableName)
+	suite.Len(foreignKey10.ColumnNames, 1)
+	fkColumn10 := foreignKey10.ColumnNames[0]
+	suite.Equal("tag_id", fkColumn10)
+	suite.Equal("public", foreignKey10.RefSchema)
+	suite.Equal("tags", foreignKey10.RefTableName)
+	suite.Len(foreignKey10.RefColumnNames, 1)
+	fkColumnRef10 := foreignKey10.RefColumnNames[0]
+	suite.Equal("id", fkColumnRef10)
+	suite.Equal("CASCADE", foreignKey10.OnDelete)
+	suite.Equal("", foreignKey10.OnUpdate)
+
+	suite.Len(table1.Indices, 1)
+	index10 := table1.Indices[0]
+	suite.Equal("idx_tag_taggables_tag_id", index10.Name)
+	suite.Equal("tag_taggables", index10.TableName)
+	suite.Len(index10.Columns, 1)
+	suite.Equal("tag_id", index10.Columns[0])
+	suite.False(index10.IsUnique)
+
+	// Should have unique constraint on (source_id, target_type, target_id)
+	suite.Len(table1.UniqueConstraints, 1)
+	uniqueConstraint10 := table1.UniqueConstraints[0]
+	suite.Equal("uk_tag_taggables_tag_id_taggable_type_taggable_id", uniqueConstraint10.Name)
+	suite.Equal("tag_taggables", uniqueConstraint10.TableName)
+	suite.Len(uniqueConstraint10.ColumnNames, 3)
+	suite.Equal("tag_id", uniqueConstraint10.ColumnNames[0])
+	suite.Equal("taggable_type", uniqueConstraint10.ColumnNames[1])
+	suite.Equal("taggable_id", uniqueConstraint10.ColumnNames[2])
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOnePoly() {
+	config := suite.getCompileConfig()
+
+	// Post model with HasOnePoly relationship
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id":    {Type: yaml.ModelFieldTypeUUID},
+			"title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Comment": {
+				Type:    "HasOnePoly",
+				Through: "Commentable",
+			},
+		},
+	}
+
+	// Comment model with ForOnePoly relationship
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"id":      {Type: yaml.ModelFieldTypeUUID},
+			"content": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Article"},
+			},
+		},
+	}
+
+	// Article model (target of the polymorphic relationship)
+	articleModel := yaml.Model{
+		Name: "Article",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Article", articleModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, postModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table := allTables[0]
+	suite.Equal("posts", table.Name)
+
+	// Should only have the model's own fields, no additional columns for HasOnePoly
+	suite.Len(table.Columns, 2)
+	suite.Equal("id", table.Columns[0].Name)
+	suite.Equal("title", table.Columns[1].Name)
+
+	suite.Len(table.ForeignKeys, 0)
+	suite.Len(table.Indices, 0)
+	suite.Len(table.UniqueConstraints, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasManyPoly() {
+	config := suite.getCompileConfig()
+
+	// Post model with HasManyPoly relationship
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id":    {Type: yaml.ModelFieldTypeUUID},
+			"title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Tag": {
+				Type:    "HasManyPoly",
+				Through: "Taggable",
+			},
+		},
+	}
+
+	// Tag model with ForManyPoly relationship
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"id":   {Type: yaml.ModelFieldTypeUUID},
+			"name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Taggable": {
+				Type: "ForManyPoly",
+				For:  []string{"Post", "Product"},
+			},
+		},
+	}
+
+	// Product model (target of the polymorphic relationship)
+	productModel := yaml.Model{
+		Name: "Product",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+	r.SetModel("Tag", tagModel)
+	r.SetModel("Product", productModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, postModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table := allTables[0]
+	suite.Equal("posts", table.Name)
+
+	// Should only have the model's own fields, no additional columns for HasManyPoly
+	suite.Len(table.Columns, 2)
+	suite.Equal("id", table.Columns[0].Name)
+	suite.Equal("title", table.Columns[1].Name)
+
+	suite.Len(table.ForeignKeys, 0)
+	suite.Len(table.Indices, 0)
+	suite.Len(table.UniqueConstraints, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOnePoly_NonExistentForProperty() {
+	config := suite.getCompileConfig()
+
+	// Comment model with ForOnePoly relationship referencing non-existent model
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"id":      {Type: yaml.ModelFieldTypeUUID},
+			"content": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "NonExistentModel"},
+			},
+		},
+	}
+
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Post", postModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, commentModel)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "model 'NonExistentModel' referenced in 'for' property not found")
+	suite.Nil(allTables)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForManyPoly_EmptyForProperty() {
+	config := suite.getCompileConfig()
+
+	// Tag model with ForManyPoly relationship with empty for array
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"id":   {Type: yaml.ModelFieldTypeUUID},
+			"name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Taggable": {
+				Type: "ForManyPoly",
+				For:  []string{}, // Empty for array
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Tag", tagModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, tagModel)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "polymorphic relation 'Taggable' must have at least one model in 'for' property")
+	suite.Nil(allTables)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOnePoly_MissingForProperty() {
+	config := suite.getCompileConfig()
+
+	// Comment model with ForOnePoly relationship missing for property
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"id":      {Type: yaml.ModelFieldTypeUUID},
+			"content": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				// Missing For property
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Comment", commentModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, commentModel)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "polymorphic relation 'Commentable' must have at least one model in 'for' property")
+	suite.Nil(allTables)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOnePoly_InvalidThrough() {
+	config := suite.getCompileConfig()
+
+	// Post model with HasOnePoly relationship pointing to non-existent through
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id":    {Type: yaml.ModelFieldTypeUUID},
+			"title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Comment": {
+				Type:    "HasOnePoly",
+				Through: "NonExistentRelation",
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, postModel)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "through property 'NonExistentRelation' not found")
+	suite.Nil(allTables)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasManyPoly_InvalidThrough() {
+	config := suite.getCompileConfig()
+
+	// Post model with HasManyPoly relationship pointing to non-polymorphic through
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id":    {Type: yaml.ModelFieldTypeUUID},
+			"title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Tag": {
+				Type:    "HasManyPoly",
+				Through: "RegularRelation",
+			},
+			"RegularRelation": {
+				Type: "ForOne",
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, postModel)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "through property 'RegularRelation' must reference a polymorphic relation")
+	suite.Nil(allTables)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOnePoly_MissingThroughProperty() {
+	config := suite.getCompileConfig()
+
+	// Post model with HasOnePoly relationship missing through property
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id":    {Type: yaml.ModelFieldTypeUUID},
+			"title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Comment": {
+				Type: "HasOnePoly",
+				// Missing Through property
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, postModel)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "polymorphic relation 'Comment' of type 'HasOnePoly' must have a 'through' property")
+	suite.Nil(allTables)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_CircularPolymorphicReference() {
+	config := suite.getCompileConfig()
+
+	// Simple circular reference: A -> B -> A
+	modelA := yaml.Model{
+		Name: "UserProfile",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"LinkedContent": {
+				Type: "ForOnePoly",
+				For:  []string{"BlogPost"},
+			},
+		},
+	}
+
+	modelB := yaml.Model{
+		Name: "BlogPost",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Author": {
+				Type: "ForOnePoly",
+				For:  []string{"UserProfile"},
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("UserProfile", modelA)
+	r.SetModel("BlogPost", modelB)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, modelA)
+
+	suite.NotNil(allTablesErr)
+	suite.ErrorContains(allTablesErr, "circular polymorphic reference detected")
+	suite.ErrorContains(allTablesErr, "infinite loop")
+	suite.ErrorContains(allTablesErr, "UserProfile -[LinkedContent]-> BlogPost")
+	suite.Nil(allTables)
+}

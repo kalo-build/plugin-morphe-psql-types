@@ -879,3 +879,548 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FailureHook() 
 
 	suite.Nil(view)
 }
+
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_ForOnePoly() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	// Comment entity for a model that has ForOnePoly relationships
+	// Test that entity compilation works correctly for models with polymorphic relationships
+	commentEntity := yaml.Entity{
+		Name: "Comment",
+		Fields: map[string]yaml.EntityField{
+			"id": {
+				Type:       "Comment.id",
+				Attributes: []string{"immutable"},
+			},
+			"content": {
+				Type: "Comment.content",
+			},
+			// Only reference regular fields, not polymorphic columns
+			// This tests that entity compilation works for models with polymorphic relationships
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {
+				Fields: []string{"id"},
+			},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	// Comment model with ForOnePoly relationship
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"id": {
+				Type: yaml.ModelFieldTypeUUID,
+			},
+			"content": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Article"},
+			},
+		},
+	}
+
+	// Target models
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	articleModel := yaml.Model{
+		Name: "Article",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Post", postModel)
+	r.SetModel("Article", articleModel)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, commentEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+	suite.Equal("comment_entities", view.Name)
+	suite.Equal("comments", view.FromTable)
+
+	// Should have only regular fields (polymorphic relationship doesn't affect entity views)
+	suite.Len(view.Columns, 2)
+
+	suite.Equal("content", view.Columns[0].Name)
+	suite.Equal("comments.content", view.Columns[0].SourceRef)
+
+	suite.Equal("id", view.Columns[1].Name)
+	suite.Equal("comments.id", view.Columns[1].SourceRef)
+
+	// Should have no joins
+	suite.Len(view.Joins, 0)
+}
+
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_ForManyPoly() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	// Tag entity with ForManyPoly relationship
+	tagEntity := yaml.Entity{
+		Name: "Tag",
+		Fields: map[string]yaml.EntityField{
+			"id": {
+				Type:       "Tag.id",
+				Attributes: []string{"immutable"},
+			},
+			"name": {
+				Type: "Tag.name",
+			},
+			// Don't reference the polymorphic relationship directly to avoid validation errors
+			// The test will verify that only regular fields are included
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {
+				Fields: []string{"id"},
+			},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	// Tag model with ForManyPoly relationship
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"id": {
+				Type: yaml.ModelFieldTypeUUID,
+			},
+			"name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Taggable": {
+				Type: "ForManyPoly",
+				For:  []string{"Post", "Product"},
+			},
+		},
+	}
+
+	// Target models
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	productModel := yaml.Model{
+		Name: "Product",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r.SetModel("Tag", tagModel)
+	r.SetModel("Post", postModel)
+	r.SetModel("Product", productModel)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, tagEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+	suite.Equal("tag_entities", view.Name)
+	suite.Equal("tags", view.FromTable)
+
+	// ForManyPoly should be simple - only regular fields, no junction table materialization
+	// Should have columns: id, name
+	suite.Len(view.Columns, 2)
+
+	suite.Equal("id", view.Columns[0].Name)
+	suite.Equal("tags.id", view.Columns[0].SourceRef)
+
+	suite.Equal("name", view.Columns[1].Name)
+	suite.Equal("tags.name", view.Columns[1].SourceRef)
+
+	// Should have no joins for ForManyPoly relationships
+	suite.Len(view.Joins, 0)
+}
+
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_HasOnePoly() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	// Post entity with HasOnePoly relationship
+	postEntity := yaml.Entity{
+		Name: "Post",
+		Fields: map[string]yaml.EntityField{
+			"id": {
+				Type:       "Post.id",
+				Attributes: []string{"immutable"},
+			},
+			"title": {
+				Type: "Post.title",
+			},
+			// Don't reference the polymorphic relationship directly to avoid validation errors
+			// The test will verify that only regular fields are included
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {
+				Fields: []string{"id"},
+			},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	// Post model with HasOnePoly relationship
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {
+				Type: yaml.ModelFieldTypeUUID,
+			},
+			"title": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Comment": {
+				Type:    "HasOnePoly",
+				Through: "Commentable",
+			},
+		},
+	}
+
+	// Comment model with the forward ForOnePoly relationship
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"id":      {Type: yaml.ModelFieldTypeUUID},
+			"content": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Article"},
+			},
+		},
+	}
+
+	articleModel := yaml.Model{
+		Name: "Article",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r.SetModel("Post", postModel)
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Article", articleModel)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, postEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+	suite.Equal("post_entities", view.Name)
+	suite.Equal("posts", view.FromTable)
+
+	// HasOnePoly should not be materialized - only regular fields
+	// Should have columns: id, title
+	suite.Len(view.Columns, 2)
+
+	suite.Equal("id", view.Columns[0].Name)
+	suite.Equal("posts.id", view.Columns[0].SourceRef)
+
+	suite.Equal("title", view.Columns[1].Name)
+	suite.Equal("posts.title", view.Columns[1].SourceRef)
+
+	// Should have no joins for HasOnePoly relationships
+	suite.Len(view.Joins, 0)
+}
+
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_HasManyPoly() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	// Post entity with HasManyPoly relationship
+	postEntity := yaml.Entity{
+		Name: "Post",
+		Fields: map[string]yaml.EntityField{
+			"id": {
+				Type:       "Post.id",
+				Attributes: []string{"immutable"},
+			},
+			"title": {
+				Type: "Post.title",
+			},
+			// Don't reference the polymorphic relationship directly to avoid validation errors
+			// The test will verify that only regular fields are included
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {
+				Fields: []string{"id"},
+			},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	// Post model with HasManyPoly relationship
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {
+				Type: yaml.ModelFieldTypeUUID,
+			},
+			"title": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Tag": {
+				Type:    "HasManyPoly",
+				Through: "Taggable",
+			},
+		},
+	}
+
+	// Tag model with the forward ForManyPoly relationship
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"id":   {Type: yaml.ModelFieldTypeUUID},
+			"name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Taggable": {
+				Type: "ForManyPoly",
+				For:  []string{"Post", "Product"},
+			},
+		},
+	}
+
+	productModel := yaml.Model{
+		Name: "Product",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r.SetModel("Post", postModel)
+	r.SetModel("Tag", tagModel)
+	r.SetModel("Product", productModel)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, postEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+	suite.Equal("post_entities", view.Name)
+	suite.Equal("posts", view.FromTable)
+
+	// HasManyPoly should not be materialized - only regular fields
+	// Should have columns: id, title
+	suite.Len(view.Columns, 2)
+
+	suite.Equal("id", view.Columns[0].Name)
+	suite.Equal("posts.id", view.Columns[0].SourceRef)
+
+	suite.Equal("title", view.Columns[1].Name)
+	suite.Equal("posts.title", view.Columns[1].SourceRef)
+
+	// Should have no joins for HasManyPoly relationships
+	suite.Len(view.Joins, 0)
+}
+
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_Mixed_Polymorphic_And_Regular() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	// Entity with mixed polymorphic and regular relationships
+	mixedEntity := yaml.Entity{
+		Name: "Mixed",
+		Fields: map[string]yaml.EntityField{
+			"id": {
+				Type:       "Mixed.id",
+				Attributes: []string{"immutable"},
+			},
+			"name": {
+				Type: "Mixed.name",
+			},
+			"user": {
+				Type: "Mixed.User.email", // Regular relationship - should create join
+			},
+			// Note: Cannot reference polymorphic relationships directly due to entity validation
+			// This test verifies that regular relationships work correctly alongside polymorphic ones
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {
+				Fields: []string{"id"},
+			},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	// Mixed model with various relationship types
+	mixedModel := yaml.Model{
+		Name: "Mixed",
+		Fields: map[string]yaml.ModelField{
+			"id": {
+				Type: yaml.ModelFieldTypeUUID,
+			},
+			"name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Article"},
+			},
+			"User": {
+				Type: "ForOne", // Regular relationship
+			},
+			"Tag": {
+				Type:    "HasManyPoly",
+				Through: "Taggable",
+			},
+		},
+	}
+
+	// Supporting models
+	userModel := yaml.Model{
+		Name: "User",
+		Fields: map[string]yaml.ModelField{
+			"id":    {Type: yaml.ModelFieldTypeUUID},
+			"email": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	articleModel := yaml.Model{
+		Name: "Article",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"id":   {Type: yaml.ModelFieldTypeUUID},
+			"name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Taggable": {
+				Type: "ForManyPoly",
+				For:  []string{"Mixed", "Product"},
+			},
+		},
+	}
+
+	r.SetModel("Mixed", mixedModel)
+	r.SetModel("User", userModel)
+	r.SetModel("Post", postModel)
+	r.SetModel("Article", articleModel)
+	r.SetModel("Tag", tagModel)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, mixedEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+	suite.Equal("mixed_entities", view.Name)
+	suite.Equal("mixeds", view.FromTable)
+
+	// Should have columns: id, name, user
+	// (polymorphic relationships don't interfere with regular relationships)
+	suite.Len(view.Columns, 3)
+
+	// Check regular columns
+	suite.Equal("id", view.Columns[0].Name)
+	suite.Equal("mixeds.id", view.Columns[0].SourceRef)
+
+	suite.Equal("name", view.Columns[1].Name)
+	suite.Equal("mixeds.name", view.Columns[1].SourceRef)
+
+	suite.Equal("user", view.Columns[2].Name)
+	suite.Equal("users.email", view.Columns[2].SourceRef)
+
+	// Should have one join for the regular User relationship
+	suite.Len(view.Joins, 1)
+
+	join := view.Joins[0]
+	suite.Equal("LEFT", join.Type)
+	suite.Equal("users", join.Table)
+	suite.Equal("users", join.Alias)
+	suite.Len(join.Conditions, 1)
+	suite.Equal("mixeds.id", join.Conditions[0].LeftRef)
+	suite.Equal("users.id", join.Conditions[0].RightRef)
+}

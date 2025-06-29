@@ -58,6 +58,11 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		return nil, validateMorpheErr
 	}
 
+	validatePolyErr := validatePolymorphicRelationships(r, model)
+	if validatePolyErr != nil {
+		return nil, validatePolyErr
+	}
+
 	schema := config.MorpheModelsConfig.Schema
 	modelName := model.Name
 	tableName := GetTableNameFromModel(modelName)
@@ -116,15 +121,24 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		return nil, junctionTablesErr
 	}
 
+	// Get polymorphic junction tables for ForManyPoly relationships
+	polymorphicJunctionTables, polymorphicJunctionTablesErr := getJunctionTablesForForManyPolyRelations(schema, r, model)
+	if polymorphicJunctionTablesErr != nil {
+		return nil, polymorphicJunctionTablesErr
+	}
+
+	// Combine all junction tables
+	allJunctionTables := append(junctionTables, polymorphicJunctionTables...)
+
 	// Process junction tables as well
-	for tableIdx := range junctionTables {
-		quoteReservedColumnNames(junctionTables[tableIdx])
-		ensureNamedForeignKeyConstraints(junctionTables[tableIdx])
+	for tableIdx := range allJunctionTables {
+		quoteReservedColumnNames(allJunctionTables[tableIdx])
+		ensureNamedForeignKeyConstraints(allJunctionTables[tableIdx])
 	}
 
 	tables := []*psqldef.Table{&modelTable}
-	if len(junctionTables) > 0 {
-		tables = append(tables, junctionTables...)
+	if len(allJunctionTables) > 0 {
+		tables = append(tables, allJunctionTables...)
 	}
 
 	return tables, nil
@@ -193,6 +207,34 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 	for _, relatedModelName := range relatedModelNames {
 		modelRelation := relatedModels[relatedModelName]
 		relationType := modelRelation.Type
+
+		if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyOne(relationType) {
+			typeColumnName := strcase.ToSnakeCaseLower(relatedModelName) + "_type"
+			typeColumn := psqldef.TableColumn{
+				Name:       typeColumnName,
+				Type:       psqldef.PSQLTypeText,
+				NotNull:    true,
+				PrimaryKey: false,
+				Default:    "",
+			}
+			columns = append(columns, typeColumn)
+
+			idColumnName := strcase.ToSnakeCaseLower(relatedModelName) + "_id"
+			idColumn := psqldef.TableColumn{
+				Name:       idColumnName,
+				Type:       psqldef.PSQLTypeText,
+				NotNull:    true,
+				PrimaryKey: false,
+				Default:    "",
+			}
+			columns = append(columns, idColumn)
+			continue
+		}
+
+		if yamlops.IsRelationPoly(relationType) {
+			continue
+		}
+
 		relatedModel, modelErr := r.GetModel(relatedModelName)
 		if modelErr != nil {
 			return nil, modelErr
@@ -242,6 +284,11 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 	for _, relatedModelName := range relatedModelNames {
 		modelRelation := relatedModels[relatedModelName]
 		relationType := modelRelation.Type
+
+		if yamlops.IsRelationPoly(relationType) {
+			continue
+		}
+
 		relatedModel, modelErr := r.GetModel(relatedModelName)
 		if modelErr != nil {
 			return nil, modelErr
@@ -362,7 +409,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 		modelRelation := model.Related[relatedModelName]
 		relationType := modelRelation.Type
 
-		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationMany(relationType) {
+		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationMany(relationType) && !yamlops.IsRelationPoly(relationType) {
 			relatedModel, modelErr := r.GetModel(relatedModelName)
 			if modelErr != nil {
 				return nil, modelErr
@@ -442,6 +489,110 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 					ColumnNames: []string{
 						sourceColumnName,
 						targetColumnName,
+					},
+				},
+			}
+
+			// Create indices for foreign keys
+			indices := getIndicesForForeignKeys(schema, junctionTableName, foreignKeys)
+
+			// Create junction table
+			junctionTable := &psqldef.Table{
+				Schema:            schema,
+				Name:              junctionTableName,
+				Columns:           columns,
+				ForeignKeys:       foreignKeys,
+				Indices:           indices,
+				UniqueConstraints: uniqueConstraints,
+			}
+
+			junctionTables = append(junctionTables, junctionTable)
+		}
+	}
+
+	return junctionTables, nil
+}
+
+// getJunctionTablesForForManyPolyRelations creates polymorphic junction tables for ForManyPoly relationships
+func getJunctionTablesForForManyPolyRelations(schema string, r *registry.Registry, model yaml.Model) ([]*psqldef.Table, error) {
+	junctionTables := []*psqldef.Table{}
+	modelName := model.Name
+	tableName := GetTableNameFromModel(modelName)
+
+	// Get primary ID field for this model
+	primaryID, hasPrimary := model.Identifiers["primary"]
+	if !hasPrimary {
+		return nil, fmt.Errorf("model %s has no primary identifier", modelName)
+	}
+	if len(primaryID.Fields) != 1 {
+		return nil, fmt.Errorf("model %s primary identifier must have exactly one field", modelName)
+	}
+	primaryIdName := primaryID.Fields[0]
+
+	relatedModelNames := core.MapKeysSorted(model.Related)
+	for _, relationName := range relatedModelNames {
+		modelRelation := model.Related[relationName]
+		relationType := modelRelation.Type
+
+		if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyMany(relationType) {
+			// Create junction table name - use relation name instead of target model name
+			junctionTableName := GetJunctionTableName(modelName, relationName)
+
+			// Create column names
+			sourceColumnName := GetForeignKeyColumnName(modelName, primaryIdName)
+			typeColumnName := strcase.ToSnakeCaseLower(relationName) + "_type"
+			idColumnName := strcase.ToSnakeCaseLower(relationName) + "_id"
+
+			// Create columns
+			columns := []psqldef.TableColumn{
+				{
+					Name:       "id",
+					Type:       psqldef.PSQLTypeSerial,
+					PrimaryKey: true,
+				},
+				{
+					Name: sourceColumnName,
+					Type: psqldef.PSQLTypeInteger,
+				},
+				{
+					Name: typeColumnName,
+					Type: psqldef.PSQLTypeText,
+				},
+				{
+					Name: idColumnName,
+					Type: psqldef.PSQLTypeText,
+				},
+			}
+
+			// Create foreign key only for the source model (no FK for polymorphic columns)
+			foreignKeys := []psqldef.ForeignKey{
+				{
+					Schema:       schema,
+					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, modelName, primaryIdName),
+					TableName:    junctionTableName,
+					ColumnNames:  []string{sourceColumnName},
+					RefSchema:    schema,
+					RefTableName: tableName,
+					RefColumnNames: []string{
+						GetColumnNameFromField(primaryIdName),
+					},
+					OnDelete: "CASCADE",
+				},
+			}
+
+			// Create unique constraint on (source_id, target_type, target_id)
+			uniqueConstraints := []psqldef.UniqueConstraint{
+				{
+					Name: GetPolymorphicJunctionTableUniqueConstraintName(
+						junctionTableName,
+						modelName, primaryIdName,
+						relationName,
+					),
+					TableName: junctionTableName,
+					ColumnNames: []string{
+						sourceColumnName,
+						typeColumnName,
+						idColumnName,
 					},
 				},
 			}
@@ -560,4 +711,123 @@ func ensureNamedForeignKeyConstraints(table *psqldef.Table) {
 			table.ForeignKeys[fkIdx] = fk
 		}
 	}
+}
+
+// validatePolymorphicRelationships validates polymorphic relationships and their through properties
+func validatePolymorphicRelationships(r *registry.Registry, model yaml.Model) error {
+	for relationName, relation := range model.Related {
+		relationType := relation.Type
+
+		// Validate ForOnePoly and ForManyPoly relationships
+		if yamlops.IsRelationPolyFor(relationType) {
+			// Check if 'for' property is present and has at least one model
+			if len(relation.For) == 0 {
+				return fmt.Errorf("polymorphic relation '%s' must have at least one model in 'for' property", relationName)
+			}
+
+			// Validate that all models in 'for' property exist in registry
+			for _, forModelName := range relation.For {
+				_, modelErr := r.GetModel(forModelName)
+				if modelErr != nil {
+					return fmt.Errorf("model '%s' referenced in 'for' property not found in registry for relation '%s'", forModelName, relationName)
+				}
+			}
+
+			// Check for circular polymorphic references
+			circularErr := checkCircularPolymorphicReferences(r, model.Name, relationName, relation.For)
+			if circularErr != nil {
+				return circularErr
+			}
+		}
+
+		// Validate HasOnePoly and HasManyPoly relationships
+		if yamlops.IsRelationPolyHas(relationType) {
+			if relation.Through == "" {
+				return fmt.Errorf("polymorphic relation '%s' of type '%s' must have a 'through' property", relationName, relationType)
+			}
+
+			// Look for the through relationship in all models in the registry
+			throughFound := false
+			throughIsPolymorphic := false
+
+			for _, registryModel := range r.GetAllModels() {
+				if throughRelation, exists := registryModel.Related[relation.Through]; exists {
+					throughFound = true
+					if yamlops.IsRelationPoly(throughRelation.Type) {
+						throughIsPolymorphic = true
+						break
+					}
+				}
+			}
+
+			if !throughFound {
+				return fmt.Errorf("through property '%s' not found in any model for relation '%s'", relation.Through, relationName)
+			}
+
+			if !throughIsPolymorphic {
+				return fmt.Errorf("through property '%s' must reference a polymorphic relation", relation.Through)
+			}
+		}
+	}
+
+	return nil
+}
+
+// checkCircularPolymorphicReferences detects circular polymorphic references
+func checkCircularPolymorphicReferences(r *registry.Registry, currentModelName string, relationName string, forModels []string) error {
+	for _, targetModelName := range forModels {
+		visited := make(map[string]bool)
+		path := []string{currentModelName}
+
+		if cyclePath := findCircularReference(r, currentModelName, targetModelName, visited, path); cyclePath != nil {
+			return fmt.Errorf("circular polymorphic reference detected, break to prevent infinite loops: %s", formatCyclePath(cyclePath, relationName))
+		}
+	}
+
+	return nil
+}
+
+// findCircularReference performs DFS to detect cycles and returns the full cycle path
+func findCircularReference(r *registry.Registry, sourceModel, targetModel string, visited map[string]bool, path []string) []string {
+	if targetModel == sourceModel && len(path) > 1 {
+		return append(path, targetModel)
+	}
+
+	if visited[targetModel] {
+		return nil
+	}
+
+	visited[targetModel] = true
+	newPath := append(path, targetModel)
+
+	targetModelData, err := r.GetModel(targetModel)
+	if err != nil {
+		return nil
+	}
+
+	for _, relation := range targetModelData.Related {
+		if yamlops.IsRelationPolyFor(relation.Type) {
+			for _, forModel := range relation.For {
+				if cyclePath := findCircularReference(r, sourceModel, forModel, visited, newPath); cyclePath != nil {
+					return cyclePath
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// formatCyclePath creates a readable representation of the circular reference path
+func formatCyclePath(cyclePath []string, initialRelation string) string {
+	if len(cyclePath) < 2 {
+		return "unknown cycle"
+	}
+
+	result := fmt.Sprintf("%s -[%s]-> %s", cyclePath[0], initialRelation, cyclePath[1])
+	for i := 1; i < len(cyclePath)-1; i++ {
+		result += fmt.Sprintf(" -[polymorphic]-> %s", cyclePath[i+1])
+	}
+
+	return result
 }

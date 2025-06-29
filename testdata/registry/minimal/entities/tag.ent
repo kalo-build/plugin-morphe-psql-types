@@ -1,0 +1,20 @@
+name: Tag
+fields:
+  ID:
+    type: Tag.ID
+    attributes:
+      - immutable
+      - mandatory
+  Name:
+    type: Tag.Name
+  Color:
+    type: Tag.Color
+identifiers:
+  primary: ID
+  name: Name
+related:
+  Taggable:
+    type: ForManyPoly
+    for:
+      - Person
+      - Company 

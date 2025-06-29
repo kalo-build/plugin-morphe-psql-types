@@ -20,3 +20,9 @@ related:
     type: HasOne
   Company:
     type: ForOne
+  Comment:
+    type: HasOnePoly
+    through: Commentable
+  Tag:
+    type: HasManyPoly
+    through: Taggable

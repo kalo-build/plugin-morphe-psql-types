@@ -1,4 +1,4 @@
-name: Company
+name: Tag
 fields:
   ID:
     type: AutoIncrement
@@ -6,17 +6,14 @@ fields:
       - mandatory
   Name:
     type: String
-  TaxID:
+  Color:
     type: String
 identifiers:
   primary: ID
   name: Name
 related:
-  Person:
-    type: HasMany
-  Comment:
-    type: HasOnePoly
-    through: Commentable
-  Tag:
-    type: HasManyPoly
-    through: Taggable
+  Taggable:
+    type: ForManyPoly
+    for:
+      - Person
+      - Company 

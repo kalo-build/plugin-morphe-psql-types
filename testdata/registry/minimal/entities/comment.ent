@@ -1,0 +1,19 @@
+name: Comment
+fields:
+  ID:
+    type: Comment.ID
+    attributes:
+      - immutable
+      - mandatory
+  Content:
+    type: Comment.Content
+  CreatedAt:
+    type: Comment.CreatedAt
+identifiers:
+  primary: ID
+related:
+  Commentable:
+    type: ForOnePoly
+    for:
+      - Person
+      - Company 

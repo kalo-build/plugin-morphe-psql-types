@@ -142,6 +142,21 @@ func GetJunctionTableUniqueConstraintName(
 	return AbbreviateIdentifier(constraintName, true)
 }
 
+// GetPolymorphicJunctionTableUniqueConstraintName generates a name for a polymorphic junction table unique constraint
+func GetPolymorphicJunctionTableUniqueConstraintName(
+	junctionTableName string,
+	sourceName, sourceIdName string,
+	relationName string,
+) string {
+	constraintName := fmt.Sprintf("uk_%s_%s_%s_%s_type_%s_id",
+		strcase.ToSnakeCaseLower(junctionTableName),
+		strcase.ToSnakeCaseLower(sourceName),
+		strcase.ToSnakeCaseLower(sourceIdName),
+		strcase.ToSnakeCaseLower(relationName),
+		strcase.ToSnakeCaseLower(relationName))
+	return AbbreviateIdentifier(constraintName, true)
+}
+
 // Pluralize a word using simple English rules
 func Pluralize(word string) string {
 	return pluralizeClient.Plural(word)

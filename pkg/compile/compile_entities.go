@@ -8,6 +8,7 @@ import (
 	"github.com/kalo-build/go-util/strcase"
 	"github.com/kalo-build/morphe-go/pkg/registry"
 	"github.com/kalo-build/morphe-go/pkg/yaml"
+	"github.com/kalo-build/morphe-go/pkg/yamlops"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
@@ -74,7 +75,6 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 		viewName += config.MorpheEntitiesConfig.ViewNameSuffix
 	}
 
-	// TODO: Extract all "root" models from the entity fields, and use the first one as the base table name
 	tableName := Pluralize(strcase.ToSnakeCaseLower(entity.Name))
 
 	view := &psqldef.View{
@@ -86,103 +86,273 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 		Joins:      []psqldef.JoinClause{},
 	}
 
-	// Process entity fields to set up columns and joins
-	joinTables := make(map[string]bool)
-	// rootTableRelationships := make(map[string]string)
-	joinTableRelationships := make(map[string]string)
-
-	fieldNames := core.MapKeysSorted(entity.Fields)
-	for _, fieldName := range fieldNames {
-		field := entity.Fields[fieldName]
-		// Convert field name to snake case for column name
-		columnName := strcase.ToSnakeCaseLower(fieldName)
-
-		// Parse the field type (e.g., "User.UUID" or "User.Child.AutoIncrement")
-		fieldParts := strings.Split(string(field.Type), ".")
-		if len(fieldParts) < 2 {
-			return nil, fmt.Errorf("invalid field type format: %s", field.Type)
-		}
-
-		// Determine source reference for this column
-		var sourceRef string
-		if len(fieldParts) == 2 {
-			// Direct field from main model
-			sourceRef = fmt.Sprintf("%s.%s", tableName, strcase.ToSnakeCaseLower(fieldParts[1]))
-		} else if len(fieldParts) == 3 {
-			// Field from related model
-			relatedModelName := fieldParts[1]
-			relatedFieldName := fieldParts[2]
-			relatedTableName := Pluralize(strcase.ToSnakeCaseLower(relatedModelName))
-			sourceRef = fmt.Sprintf("%s.%s", relatedTableName, strcase.ToSnakeCaseLower(relatedFieldName))
-
-			// Record that we need a join to this table
-			joinTables[relatedTableName] = true
-
-			// Record the relationship to set up join condition
-			joinTableRelationships[relatedTableName] = relatedModelName
-		}
-
-		// Add column to the view
-		column := psqldef.ViewColumn{
-			Name:      columnName,
-			SourceRef: sourceRef,
-			Alias:     "", // No alias by default
-		}
-		view.Columns = append(view.Columns, column)
+	context := &entityCompileContext{
+		config:                 config,
+		registry:               r,
+		entity:                 entity,
+		view:                   view,
+		tableName:              tableName,
+		joinTables:             make(map[string]bool),
+		joinTableRelationships: make(map[string]string),
 	}
 
-	// Set up joins based on relationships
-	for joinTable, _ := range joinTables {
-		// Get related model name
-		relatedModelName := joinTableRelationships[joinTable]
+	if err := processEntityFields(context); err != nil {
+		return nil, err
+	}
+
+	if err := setupJoinsForRegularRelationships(context); err != nil {
+		return nil, err
+	}
+
+	return view, nil
+}
+
+// entityCompileContext holds all the context needed for entity compilation
+type entityCompileContext struct {
+	config                 cfg.MorpheConfig
+	registry               *registry.Registry
+	entity                 yaml.Entity
+	view                   *psqldef.View
+	tableName              string
+	joinTables             map[string]bool
+	joinTableRelationships map[string]string
+}
+
+// processEntityFields processes all entity fields and adds appropriate columns to the view
+func processEntityFields(ctx *entityCompileContext) error {
+	fieldNames := core.MapKeysSorted(ctx.entity.Fields)
+	for _, fieldName := range fieldNames {
+		field := ctx.entity.Fields[fieldName]
+		columnName := strcase.ToSnakeCaseLower(fieldName)
+
+		if err := processEntityField(ctx, fieldName, field, columnName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// processEntityField processes a single entity field and handles all field type variations
+func processEntityField(ctx *entityCompileContext, fieldName string, field yaml.EntityField, columnName string) error {
+	fieldParts := strings.Split(string(field.Type), ".")
+	if len(fieldParts) < 2 {
+		return fmt.Errorf("invalid field type format: %s", field.Type)
+	}
+
+	// The last part is always the field name, everything before represents relationship chain
+	relationshipChain := fieldParts[:len(fieldParts)-1]
+	targetFieldName := fieldParts[len(fieldParts)-1]
+
+	return processFieldPath(ctx, fieldName, relationshipChain, targetFieldName, columnName)
+}
+
+// processFieldPath processes a field path with arbitrary relationship chain depth
+func processFieldPath(ctx *entityCompileContext, fieldName string, relationshipChain []string, targetFieldName string, columnName string) error {
+	// For field paths like "User.UUID" or "User.Child.Name" or "User.Child.Grandchild.Field"
+	// The first element should match the entity model name, then subsequent elements are relationships
+
+	if len(relationshipChain) == 0 {
+		return fmt.Errorf("invalid field path: no model specified")
+	}
+
+	rootModelName := relationshipChain[0]
+
+	// If there's only one element, this is a direct field reference (e.g., "User.UUID")
+	if len(relationshipChain) == 1 {
+		return addRegularColumn(ctx, columnName, ctx.tableName, targetFieldName)
+	}
+
+	// More than one element means we have relationships to traverse
+	currentModelName := rootModelName
+	currentTableName := ctx.tableName
+
+	// Start from index 1 since index 0 is the root model name
+	for i := 1; i < len(relationshipChain); i++ {
+		relationName := relationshipChain[i]
+
+		currentModel, err := ctx.registry.GetModel(currentModelName)
+		if err != nil {
+			return err
+		}
+
+		relation, relationExists := currentModel.Related[relationName]
+		if !relationExists {
+			return fmt.Errorf("relationship %s not found in model %s", relationName, currentModelName)
+		}
+
+		// Handle polymorphic relationships
+		if yamlops.IsRelationPoly(relation.Type) {
+			// Pass the remaining chain starting from this relationship
+			remainingChain := relationshipChain[i:]
+			return handlePolymorphicFieldPath(ctx, fieldName, relationName, remainingChain, targetFieldName, columnName, currentModel)
+		}
+
+		// Handle regular relationships - set up join and continue traversal
+		relatedTableName := Pluralize(strcase.ToSnakeCaseLower(relationName))
+
+		// Record that we need a join to this table
+		ctx.joinTables[relatedTableName] = true
+		ctx.joinTableRelationships[relatedTableName] = relationName
+
+		// Update current context for next iteration
+		currentModelName = relationName
+		currentTableName = relatedTableName
+	}
+
+	// We've traversed all relationships, now add the final field column
+	return addRegularColumn(ctx, columnName, currentTableName, targetFieldName)
+}
+
+// handlePolymorphicFieldPath handles field paths that encounter polymorphic relationships
+func handlePolymorphicFieldPath(ctx *entityCompileContext, fieldName string, relationName string, remainingChain []string, targetFieldName string, columnName string, currentModel yaml.Model) error {
+	// Get the polymorphic relationship
+	relation := currentModel.Related[relationName]
+
+	// For polymorphic relationships, we need to determine what to do based on type and position in chain
+	if len(remainingChain) == 1 {
+		// This is a direct reference to a polymorphic relationship (e.g., "User.Commentable")
+		// The relationName is the first (and only) element in remaining chain
+		return handlePolymorphicRelationshipColumns(ctx, relationName, columnName, string(relation.Type))
+	}
+
+	// This is a nested field through a polymorphic relationship (e.g., "User.Commentable.SomeField.Name")
+	// For nested polymorphic paths, we have different handling based on relationship type
+	if yamlops.IsRelationPolyFor(relation.Type) && yamlops.IsRelationPolyOne(relation.Type) {
+		// ForOnePoly: Include raw polymorphic columns (type + id)
+		// We cannot traverse further through polymorphic relationships in entity views
+		return addPolymorphicColumns(ctx, relationName, columnName)
+	}
+
+	if yamlops.IsRelationPolyFor(relation.Type) && yamlops.IsRelationPolyMany(relation.Type) {
+		// ForManyPoly: Keep simple, no junction table materialization
+		return nil
+	}
+
+	if yamlops.IsRelationPolyHas(relation.Type) {
+		// HasOnePoly/HasManyPoly: Not materialized in entity views
+		return nil
+	}
+
+	return nil
+}
+
+// handlePolymorphicRelationshipColumns creates polymorphic type and id columns
+func handlePolymorphicRelationshipColumns(ctx *entityCompileContext, relationName, columnName string, relationType string) error {
+	if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyOne(relationType) {
+		// ForOnePoly: Include raw polymorphic columns (type + id)
+		return addPolymorphicColumns(ctx, relationName, columnName)
+	}
+
+	if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyMany(relationType) {
+		// ForManyPoly: Keep simple, no junction table materialization
+		return nil
+	}
+
+	if yamlops.IsRelationPolyHas(relationType) {
+		// HasOnePoly/HasManyPoly: Not materialized in entity views
+		return nil
+	}
+
+	return nil
+}
+
+// addPolymorphicColumns adds both type and id columns for a polymorphic relationship
+func addPolymorphicColumns(ctx *entityCompileContext, relationName, baseColumnName string) error {
+	typeColumnName := baseColumnName + "_type"
+	idColumnName := baseColumnName + "_id"
+
+	dbRelationName := strcase.ToSnakeCaseLower(relationName)
+	typeSourceRef := fmt.Sprintf("%s.%s_type", ctx.tableName, dbRelationName)
+	idSourceRef := fmt.Sprintf("%s.%s_id", ctx.tableName, dbRelationName)
+
+	// Add type column
+	typeColumn := psqldef.ViewColumn{
+		Name:      typeColumnName,
+		SourceRef: typeSourceRef,
+		Alias:     "",
+	}
+	ctx.view.Columns = append(ctx.view.Columns, typeColumn)
+
+	// Add id column
+	idColumn := psqldef.ViewColumn{
+		Name:      idColumnName,
+		SourceRef: idSourceRef,
+		Alias:     "",
+	}
+	ctx.view.Columns = append(ctx.view.Columns, idColumn)
+
+	return nil
+}
+
+// addRegularColumn adds a regular column to the view
+func addRegularColumn(ctx *entityCompileContext, columnName, tableName, fieldName string) error {
+	sourceRef := fmt.Sprintf("%s.%s", tableName, strcase.ToSnakeCaseLower(fieldName))
+
+	column := psqldef.ViewColumn{
+		Name:      columnName,
+		SourceRef: sourceRef,
+		Alias:     "",
+	}
+	ctx.view.Columns = append(ctx.view.Columns, column)
+
+	return nil
+}
+
+// setupJoinsForRegularRelationships sets up joins for all recorded regular relationships
+func setupJoinsForRegularRelationships(ctx *entityCompileContext) error {
+	for joinTable := range ctx.joinTables {
+		relatedModelName := ctx.joinTableRelationships[joinTable]
 		if relatedModelName == "" {
 			continue
 		}
 
-		// Find relationship in model
-		modelName := entity.Name
-		model, modelErr := r.GetModel(modelName)
-		if modelErr != nil {
-			return nil, modelErr
+		if err := addJoinClause(ctx, joinTable, relatedModelName); err != nil {
+			return err
 		}
+	}
+	return nil
+}
 
-		_, relationshipExists := model.Related[relatedModelName]
-		if !relationshipExists {
-			return nil, fmt.Errorf("relationship %s not found in model %s", relatedModelName, modelName)
-		}
-
-		joinType := "LEFT"
-		// TODO: We can't just use uuid, we need to extract the primary identifier field from each.
-
-		rootPrimaryId, rootPrimaryIdExists := model.Identifiers["primary"]
-		if !rootPrimaryIdExists {
-			return nil, fmt.Errorf("primary identifier not found in model '%s'", modelName)
-		}
-
-		relatedPrimaryId, relatedPrimaryIdExists := model.Identifiers["primary"]
-		if !relatedPrimaryIdExists {
-			return nil, fmt.Errorf("primary identifier not found in model '%s'", relatedModelName)
-		}
-		rootPrimaryIdName := strcase.ToSnakeCaseLower(rootPrimaryId.Fields[0])
-		relatedPrimaryIdName := strcase.ToSnakeCaseLower(relatedPrimaryId.Fields[0])
-
-		joinClause := psqldef.JoinClause{
-			Type:   joinType,
-			Schema: config.MorpheModelsConfig.Schema,
-			Table:  joinTable,
-			Alias:  joinTable,
-			Conditions: []psqldef.JoinCondition{
-				{
-					LeftRef:  tableName + "." + rootPrimaryIdName,
-					RightRef: joinTable + "." + relatedPrimaryIdName,
-				},
-			},
-		}
-
-		view.Joins = append(view.Joins, joinClause)
+// addJoinClause adds a single join clause to the view
+func addJoinClause(ctx *entityCompileContext, joinTable, relatedModelName string) error {
+	model, err := ctx.registry.GetModel(ctx.entity.Name)
+	if err != nil {
+		return err
 	}
 
-	return view, nil
+	_, relationshipExists := model.Related[relatedModelName]
+	if !relationshipExists {
+		return fmt.Errorf("relationship %s not found in model %s", relatedModelName, ctx.entity.Name)
+	}
+
+	rootPrimaryId, rootExists := model.Identifiers["primary"]
+	if !rootExists {
+		return fmt.Errorf("primary identifier not found in model '%s'", ctx.entity.Name)
+	}
+
+	relatedPrimaryId, relatedExists := model.Identifiers["primary"]
+	if !relatedExists {
+		return fmt.Errorf("primary identifier not found in model '%s'", relatedModelName)
+	}
+
+	rootPrimaryIdName := strcase.ToSnakeCaseLower(rootPrimaryId.Fields[0])
+	relatedPrimaryIdName := strcase.ToSnakeCaseLower(relatedPrimaryId.Fields[0])
+
+	joinClause := psqldef.JoinClause{
+		Type:   "LEFT",
+		Schema: ctx.config.MorpheModelsConfig.Schema,
+		Table:  joinTable,
+		Alias:  joinTable,
+		Conditions: []psqldef.JoinCondition{
+			{
+				LeftRef:  ctx.tableName + "." + rootPrimaryIdName,
+				RightRef: joinTable + "." + relatedPrimaryIdName,
+			},
+		},
+	}
+
+	ctx.view.Joins = append(ctx.view.Joins, joinClause)
+	return nil
 }
 
 func triggerCompileMorpheEntityStart(hooks hook.CompileMorpheEntity, config cfg.MorpheConfig, entity yaml.Entity) (cfg.MorpheConfig, yaml.Entity, error) {
@@ -207,4 +377,13 @@ func triggerCompileMorpheEntityFailure(hooks hook.CompileMorpheEntity, config cf
 	}
 
 	return hooks.OnCompileMorpheEntityFailure(config, entity, failureErr)
+}
+
+// handleRelationshipReference handles when an entity field directly references a relationship
+func handleRelationshipReference(ctx *entityCompileContext, fieldName, relationName string, relation yaml.ModelRelation, columnName string) error {
+	if !yamlops.IsRelationPoly(relation.Type) {
+		return fmt.Errorf("entity field '%s' cannot reference non-polymorphic relationship '%s' directly", fieldName, relationName)
+	}
+
+	return handlePolymorphicRelationshipColumns(ctx, relationName, columnName, string(relation.Type))
 }
