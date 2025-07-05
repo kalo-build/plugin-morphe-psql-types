@@ -188,14 +188,16 @@ func processFieldPath(ctx *entityCompileContext, fieldName string, relationshipC
 		}
 
 		// Handle regular relationships - set up join and continue traversal
-		relatedTableName := Pluralize(strcase.ToSnakeCaseLower(relationName))
+		// Use aliasing-aware target model name resolution
+		targetModelName := GetTargetModelNameFromRelation(relationName, relation)
+		relatedTableName := Pluralize(strcase.ToSnakeCaseLower(targetModelName))
 
 		// Record that we need a join to this table
 		ctx.joinTables[relatedTableName] = true
 		ctx.joinTableRelationships[relatedTableName] = relationName
 
-		// Update current context for next iteration
-		currentModelName = relationName
+		// Update current context for next iteration - use actual target model name
+		currentModelName = targetModelName
 		currentTableName = relatedTableName
 	}
 
@@ -314,15 +316,24 @@ func setupJoinsForRegularRelationships(ctx *entityCompileContext) error {
 }
 
 // addJoinClause adds a single join clause to the view
-func addJoinClause(ctx *entityCompileContext, joinTable, relatedModelName string) error {
+func addJoinClause(ctx *entityCompileContext, joinTable, relationName string) error {
 	model, err := ctx.registry.GetModel(ctx.entity.Name)
 	if err != nil {
 		return err
 	}
 
-	_, relationshipExists := model.Related[relatedModelName]
+	relation, relationshipExists := model.Related[relationName]
 	if !relationshipExists {
-		return fmt.Errorf("relationship %s not found in model %s", relatedModelName, ctx.entity.Name)
+		return fmt.Errorf("relationship %s not found in model %s", relationName, ctx.entity.Name)
+	}
+
+	// Get the actual target model name (supports aliasing)
+	targetModelName := GetTargetModelNameFromRelation(relationName, relation)
+	
+	// Get the target model to access its primary identifier
+	targetModel, targetErr := ctx.registry.GetModel(targetModelName)
+	if targetErr != nil {
+		return fmt.Errorf("target model %s not found for relationship %s: %w", targetModelName, relationName, targetErr)
 	}
 
 	rootPrimaryId, rootExists := model.Identifiers["primary"]
@@ -330,13 +341,18 @@ func addJoinClause(ctx *entityCompileContext, joinTable, relatedModelName string
 		return fmt.Errorf("primary identifier not found in model '%s'", ctx.entity.Name)
 	}
 
-	relatedPrimaryId, relatedExists := model.Identifiers["primary"]
-	if !relatedExists {
-		return fmt.Errorf("primary identifier not found in model '%s'", relatedModelName)
+	targetPrimaryId, targetExists := targetModel.Identifiers["primary"]
+	if !targetExists {
+		return fmt.Errorf("primary identifier not found in target model '%s'", targetModelName)
 	}
 
 	rootPrimaryIdName := strcase.ToSnakeCaseLower(rootPrimaryId.Fields[0])
-	relatedPrimaryIdName := strcase.ToSnakeCaseLower(relatedPrimaryId.Fields[0])
+	targetPrimaryIdName := strcase.ToSnakeCaseLower(targetPrimaryId.Fields[0])
+
+	// For entity views, we always join on primary keys
+	// The relationship direction handling is done in the model compilation, not entity views
+	leftRef := ctx.tableName + "." + rootPrimaryIdName
+	rightRef := joinTable + "." + targetPrimaryIdName
 
 	joinClause := psqldef.JoinClause{
 		Type:   "LEFT",
@@ -345,8 +361,8 @@ func addJoinClause(ctx *entityCompileContext, joinTable, relatedModelName string
 		Alias:  joinTable,
 		Conditions: []psqldef.JoinCondition{
 			{
-				LeftRef:  ctx.tableName + "." + rootPrimaryIdName,
-				RightRef: joinTable + "." + relatedPrimaryIdName,
+				LeftRef:  leftRef,
+				RightRef: rightRef,
 			},
 		},
 	}
