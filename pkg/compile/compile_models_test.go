@@ -2265,3 +2265,97 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_Circula
 	suite.ErrorContains(allTablesErr, "UserProfile -[LinkedContent]-> BlogPost")
 	suite.Nil(allTables)
 }
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Company model with aliased ForOne relationships
+	companyModel := yaml.Model{
+		Name: "Company",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+				Attributes: []string{
+					"mandatory",
+				},
+			},
+			"Name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+			"TaxID": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+			"name":    {Fields: []string{"Name"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Person": {
+				Type: "ForOne",
+			},
+		},
+	}
+
+	// Person model  
+	personModel := yaml.Model{
+		Name: "Person",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+				Attributes: []string{
+					"mandatory",
+				},
+			},
+			"FirstName": {
+				Type: yaml.ModelFieldTypeString,
+			},
+			"LastName": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+			"name":    {Fields: []string{"FirstName", "LastName"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Company", companyModel)
+	r.SetModel("Person", personModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, companyModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1) // Only Company table
+
+	// Check Company table
+	companyTable := allTables[0]
+	suite.Equal("companies", companyTable.Name)
+	
+	// Should have 4 columns: id, name, tax_id, person_id (for Person relationship)
+	suite.Len(companyTable.Columns, 4)
+	
+	// Check that the foreign key column uses the relation name
+	personFkColumn := companyTable.Columns[3]
+	suite.Equal("person_id", personFkColumn.Name) // Current behavior: uses relation name
+	suite.Equal(psqldef.PSQLTypeInteger, personFkColumn.Type)
+	
+	// Check foreign key constraint
+	suite.Len(companyTable.ForeignKeys, 1)
+	fk := companyTable.ForeignKeys[0]
+	suite.Equal("fk_companies_person_id", fk.Name)
+	suite.Equal([]string{"person_id"}, fk.ColumnNames)
+	suite.Equal("people", fk.RefTableName) // References the actual target table
+	suite.Equal([]string{"id"}, fk.RefColumnNames)
+	
+	// This test shows CURRENT behavior - after aliasing implementation, 
+	// we want to be able to have "Owner" and "Employee" relations both 
+	// pointing to "Person" model with different column names
+}
+
+// TODO: These tests will be implemented after adding Aliased field support
+// func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany_Aliased() {
+// func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_Aliased_MissingTarget() {
+// func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_Aliased_WithPolymorphic() {
