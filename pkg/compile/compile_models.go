@@ -63,6 +63,11 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 		return nil, validatePolyErr
 	}
 
+	validateAliasErr := ValidateAliasedRelations(r, model)
+	if validateAliasErr != nil {
+		return nil, validateAliasErr
+	}
+
 	schema := config.MorpheModelsConfig.Schema
 	modelName := model.Name
 	tableName := GetTableNameFromModel(modelName)
@@ -235,27 +240,31 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 			continue
 		}
 
-		relatedModel, modelErr := r.GetModel(relatedModelName)
+		// Get the target model name (supports aliasing)
+		targetModelName := GetTargetModelNameFromRelation(relatedModelName, modelRelation)
+		
+		relatedModel, modelErr := r.GetModel(targetModelName)
 		if modelErr != nil {
 			return nil, modelErr
 		}
 		primaryID, hasPrimary := relatedModel.Identifiers["primary"]
 		if !hasPrimary {
-			return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+			return nil, fmt.Errorf("related model %s has no primary identifier", targetModelName)
 		}
 
 		if len(primaryID.Fields) != 1 {
-			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", relatedModelName)
+			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", targetModelName)
 		}
 
 		targetPrimaryIdName := primaryID.Fields[0]
 		targetPrimaryIdField, primaryFieldExists := relatedModel.Fields[targetPrimaryIdName]
 		if !primaryFieldExists {
-			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", relatedModelName, targetPrimaryIdName)
+			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", targetModelName, targetPrimaryIdName)
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
-			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
+			// Use aliasing-aware column naming
+			columnName := GetForeignKeyColumnNameWithAlias(relatedModelName, modelRelation, targetPrimaryIdName)
 
 			columnType, supported := typeMap[targetPrimaryIdField.Type]
 			if !supported {
@@ -289,28 +298,32 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 			continue
 		}
 
-		relatedModel, modelErr := r.GetModel(relatedModelName)
+		// Get the target model name (supports aliasing)
+		targetModelName := GetTargetModelNameFromRelation(relatedModelName, modelRelation)
+		
+		relatedModel, modelErr := r.GetModel(targetModelName)
 		if modelErr != nil {
 			return nil, modelErr
 		}
 		primaryID, hasPrimary := relatedModel.Identifiers["primary"]
 		if !hasPrimary {
-			return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+			return nil, fmt.Errorf("related model %s has no primary identifier", targetModelName)
 		}
 
 		if len(primaryID.Fields) != 1 {
-			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", relatedModelName)
+			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", targetModelName)
 		}
 
 		targetPrimaryIdName := primaryID.Fields[0]
 		_, primaryFieldExists := relatedModel.Fields[targetPrimaryIdName]
 		if !primaryFieldExists {
-			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", relatedModelName, targetPrimaryIdName)
+			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", targetModelName, targetPrimaryIdName)
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
-			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
-			refTableName := GetTableNameFromModel(relatedModelName)
+			// Use aliasing-aware column naming
+			columnName := GetForeignKeyColumnNameWithAlias(relatedModelName, modelRelation, targetPrimaryIdName)
+			refTableName := GetTableNameFromModel(targetModelName)  // Use target model name
 			refColumnName := GetColumnNameFromField(targetPrimaryIdName)
 
 			foreignKey := psqldef.ForeignKey{
@@ -410,7 +423,10 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 		relationType := modelRelation.Type
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationMany(relationType) && !yamlops.IsRelationPoly(relationType) {
-			relatedModel, modelErr := r.GetModel(relatedModelName)
+			// Get the target model name (supports aliasing)
+			targetModelName := GetTargetModelNameFromRelation(relatedModelName, modelRelation)
+			
+			relatedModel, modelErr := r.GetModel(targetModelName)
 			if modelErr != nil {
 				return nil, modelErr
 			}
@@ -418,19 +434,19 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 			// Get primary ID field for related model
 			relatedPrimaryID, hasRelatedPrimary := relatedModel.Identifiers["primary"]
 			if !hasRelatedPrimary {
-				return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+				return nil, fmt.Errorf("related model %s has no primary identifier", targetModelName)
 			}
 			if len(relatedPrimaryID.Fields) != 1 {
-				return nil, fmt.Errorf("related model %s primary identifier must have exactly one field", relatedModelName)
+				return nil, fmt.Errorf("related model %s primary identifier must have exactly one field", targetModelName)
 			}
 			relatedPrimaryIdName := relatedPrimaryID.Fields[0]
 
-			// Create junction table
-			junctionTableName := GetJunctionTableName(modelName, relatedModelName)
+			// Create junction table using aliasing-aware naming
+			junctionTableName := GetJunctionTableNameWithAlias(modelName, relatedModelName, modelRelation)
 
 			// Create column names
 			sourceColumnName := GetForeignKeyColumnName(modelName, primaryIdName)
-			targetColumnName := GetForeignKeyColumnName(relatedModelName, relatedPrimaryIdName)
+			targetColumnName := GetForeignKeyColumnNameWithAlias(relatedModelName, modelRelation, relatedPrimaryIdName)
 
 			// Create columns
 			columns := []psqldef.TableColumn{
@@ -465,11 +481,11 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 				},
 				{
 					Schema:       schema,
-					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, relatedModelName, relatedPrimaryIdName),
+					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, targetModelName, relatedPrimaryIdName),
 					TableName:    junctionTableName,
 					ColumnNames:  []string{targetColumnName},
 					RefSchema:    schema,
-					RefTableName: GetTableNameFromModel(relatedModelName),
+					RefTableName: GetTableNameFromModel(targetModelName),  // Use target model name
 					RefColumnNames: []string{
 						GetColumnNameFromField(relatedPrimaryIdName),
 					},
@@ -483,7 +499,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 					Name: GetJunctionTableUniqueConstraintName(
 						junctionTableName,
 						modelName, primaryIdName,
-						relatedModelName, relatedPrimaryIdName,
+						targetModelName, relatedPrimaryIdName,  // Use target model name
 					),
 					TableName: junctionTableName,
 					ColumnNames: []string{
