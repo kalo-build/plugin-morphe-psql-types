@@ -1,0 +1,25 @@
+name: Person
+fields:
+  ID:
+    type: AutoIncrement
+  Name:
+    type: String
+  Email:
+    type: String
+identifiers:
+  primary:
+    fields:
+      - ID
+related:
+  WorkContact:
+    type: ForOne
+    aliased: Contact
+  PersonalContact:
+    type: ForOne
+    aliased: Contact
+  WorkProjects:
+    type: ForMany
+    aliased: Project
+  PersonalProjects:
+    type: ForMany
+    aliased: Project

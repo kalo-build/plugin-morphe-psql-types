@@ -207,6 +207,8 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 	for _, relatedModelName := range relatedModelNames {
 		modelRelation := relatedModels[relatedModelName]
 		relationType := modelRelation.Type
+		// Resolve the actual target model name using aliasing
+		targetModelName := yamlops.GetRelationTargetName(relatedModelName, modelRelation.Aliased)
 
 		if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyOne(relationType) {
 			typeColumnName := strcase.ToSnakeCaseLower(relatedModelName) + "_type"
@@ -235,26 +237,28 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 			continue
 		}
 
-		relatedModel, modelErr := r.GetModel(relatedModelName)
+		// Use targetModelName for model lookup, but keep relatedModelName for column naming
+		relatedModel, modelErr := r.GetModel(targetModelName)
 		if modelErr != nil {
 			return nil, modelErr
 		}
 		primaryID, hasPrimary := relatedModel.Identifiers["primary"]
 		if !hasPrimary {
-			return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+			return nil, fmt.Errorf("related model %s has no primary identifier", targetModelName)
 		}
 
 		if len(primaryID.Fields) != 1 {
-			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", relatedModelName)
+			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", targetModelName)
 		}
 
 		targetPrimaryIdName := primaryID.Fields[0]
 		targetPrimaryIdField, primaryFieldExists := relatedModel.Fields[targetPrimaryIdName]
 		if !primaryFieldExists {
-			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", relatedModelName, targetPrimaryIdName)
+			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", targetModelName, targetPrimaryIdName)
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
+			// Use relatedModelName for column naming to maintain backward compatibility
 			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
 
 			columnType, supported := typeMap[targetPrimaryIdField.Type]
@@ -284,33 +288,38 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 	for _, relatedModelName := range relatedModelNames {
 		modelRelation := relatedModels[relatedModelName]
 		relationType := modelRelation.Type
+		// Resolve the actual target model name using aliasing
+		targetModelName := yamlops.GetRelationTargetName(relatedModelName, modelRelation.Aliased)
 
 		if yamlops.IsRelationPoly(relationType) {
 			continue
 		}
 
-		relatedModel, modelErr := r.GetModel(relatedModelName)
+		// Use targetModelName for model lookup
+		relatedModel, modelErr := r.GetModel(targetModelName)
 		if modelErr != nil {
 			return nil, modelErr
 		}
 		primaryID, hasPrimary := relatedModel.Identifiers["primary"]
 		if !hasPrimary {
-			return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+			return nil, fmt.Errorf("related model %s has no primary identifier", targetModelName)
 		}
 
 		if len(primaryID.Fields) != 1 {
-			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", relatedModelName)
+			return nil, fmt.Errorf("related entity %s primary identifier must have exactly one field", targetModelName)
 		}
 
 		targetPrimaryIdName := primaryID.Fields[0]
 		_, primaryFieldExists := relatedModel.Fields[targetPrimaryIdName]
 		if !primaryFieldExists {
-			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", relatedModelName, targetPrimaryIdName)
+			return nil, fmt.Errorf("related entity %s primary identifier field %s not found", targetModelName, targetPrimaryIdName)
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
+			// Use relatedModelName for column naming to maintain backward compatibility
 			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
-			refTableName := GetTableNameFromModel(relatedModelName)
+			// Use targetModelName for the reference table
+			refTableName := GetTableNameFromModel(targetModelName)
 			refColumnName := GetColumnNameFromField(targetPrimaryIdName)
 
 			foreignKey := psqldef.ForeignKey{
@@ -408,9 +417,12 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 	for _, relatedModelName := range relatedModelNames {
 		modelRelation := model.Related[relatedModelName]
 		relationType := modelRelation.Type
+		// Resolve the actual target model name using aliasing
+		targetModelName := yamlops.GetRelationTargetName(relatedModelName, modelRelation.Aliased)
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationMany(relationType) && !yamlops.IsRelationPoly(relationType) {
-			relatedModel, modelErr := r.GetModel(relatedModelName)
+			// Use targetModelName for model lookup
+			relatedModel, modelErr := r.GetModel(targetModelName)
 			if modelErr != nil {
 				return nil, modelErr
 			}
@@ -418,17 +430,17 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 			// Get primary ID field for related model
 			relatedPrimaryID, hasRelatedPrimary := relatedModel.Identifiers["primary"]
 			if !hasRelatedPrimary {
-				return nil, fmt.Errorf("related model %s has no primary identifier", relatedModelName)
+				return nil, fmt.Errorf("related model %s has no primary identifier", targetModelName)
 			}
 			if len(relatedPrimaryID.Fields) != 1 {
-				return nil, fmt.Errorf("related model %s primary identifier must have exactly one field", relatedModelName)
+				return nil, fmt.Errorf("related model %s primary identifier must have exactly one field", targetModelName)
 			}
 			relatedPrimaryIdName := relatedPrimaryID.Fields[0]
 
-			// Create junction table
+			// Create junction table - use relatedModelName for naming to maintain backward compatibility
 			junctionTableName := GetJunctionTableName(modelName, relatedModelName)
 
-			// Create column names
+			// Create column names - use relationship names for columns
 			sourceColumnName := GetForeignKeyColumnName(modelName, primaryIdName)
 			targetColumnName := GetForeignKeyColumnName(relatedModelName, relatedPrimaryIdName)
 
@@ -465,11 +477,13 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 				},
 				{
 					Schema:       schema,
+					// Use relatedModelName for constraint naming
 					Name:         GetJunctionTableForeignKeyConstraintName(junctionTableName, relatedModelName, relatedPrimaryIdName),
 					TableName:    junctionTableName,
 					ColumnNames:  []string{targetColumnName},
 					RefSchema:    schema,
-					RefTableName: GetTableNameFromModel(relatedModelName),
+					// Use targetModelName for the reference table
+					RefTableName: GetTableNameFromModel(targetModelName),
 					RefColumnNames: []string{
 						GetColumnNameFromField(relatedPrimaryIdName),
 					},
@@ -477,7 +491,7 @@ func getJunctionTablesForForManyRelations(schema string, r *registry.Registry, m
 				},
 			}
 
-			// Create unique constraint
+			// Create unique constraint - use relationship names
 			uniqueConstraints := []psqldef.UniqueConstraint{
 				{
 					Name: GetJunctionTableUniqueConstraintName(

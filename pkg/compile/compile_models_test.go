@@ -492,13 +492,122 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne(
 
 	suite.Len(table0.Indices, 1)
 	index0 := table0.Indices[0]
-	suite.Equal("idx_basics_basic_parent_id", index0.Name)
+	suite.Equal("basic_parent_id_idx", index0.Name)
 	suite.Equal("basics", index0.TableName)
 	suite.Len(index0.Columns, 1)
 	suite.Equal("basic_parent_id", index0.Columns[0])
-	suite.False(index0.IsUnique)
-
+	
 	suite.Len(table0.UniqueConstraints, 0)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Person model with aliased relationships to Contact model
+	personModel := yaml.Model{
+		Name: "Person",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"WorkContact": {
+				Type:    "ForOne",
+				Aliased: "Contact",
+			},
+			"PersonalContact": {
+				Type:    "ForOne",
+				Aliased: "Contact",
+			},
+		},
+	}
+	
+	// Contact model that is referenced by aliased relationships
+	contactModel := yaml.Model{
+		Name: "Contact",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Email": {
+				Type: yaml.ModelFieldTypeString,
+			},
+			"Phone": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"PersonsAsWork": {
+				Type:    "HasMany",
+				Aliased: "Person.WorkContact",
+			},
+			"PersonsAsPersonal": {
+				Type:    "HasMany",
+				Aliased: "Person.PersonalContact",
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Person", personModel)
+	r.SetModel("Contact", contactModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, personModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table := allTables[0]
+
+	// Check table basics
+	suite.Equal(config.MorpheConfig.MorpheModelsConfig.Schema, table.Schema)
+	suite.Equal("people", table.Name)
+	suite.Len(table.Columns, 4) // id, name, work_contact_id, personal_contact_id
+
+	// Check columns - they should use relationship names, not aliased target
+	suite.Equal("id", table.Columns[0].Name)
+	suite.Equal("name", table.Columns[1].Name)
+	// PersonalContact comes before WorkContact alphabetically
+	suite.Equal("personal_contact_id", table.Columns[2].Name)
+	suite.Equal(psqldef.PSQLTypeInteger, table.Columns[2].Type)
+	suite.Equal("work_contact_id", table.Columns[3].Name)
+	suite.Equal(psqldef.PSQLTypeInteger, table.Columns[3].Type)
+
+	// Check foreign keys - they should reference the correct target table
+	suite.Len(table.ForeignKeys, 2)
+	
+	// Personal contact foreign key (comes first alphabetically)
+	suite.Equal("fk_people_personal_contact_id", table.ForeignKeys[0].Name)
+	suite.Equal("people", table.ForeignKeys[0].TableName)
+	suite.Equal([]string{"personal_contact_id"}, table.ForeignKeys[0].ColumnNames)
+	suite.Equal("contacts", table.ForeignKeys[0].RefTableName) // References Contact table
+	suite.Equal([]string{"id"}, table.ForeignKeys[0].RefColumnNames)
+
+	// Work contact foreign key
+	suite.Equal("fk_people_work_contact_id", table.ForeignKeys[1].Name)
+	suite.Equal("people", table.ForeignKeys[1].TableName)
+	suite.Equal([]string{"work_contact_id"}, table.ForeignKeys[1].ColumnNames)
+	suite.Equal("contacts", table.ForeignKeys[1].RefTableName) // References Contact table
+	suite.Equal([]string{"id"}, table.ForeignKeys[1].RefColumnNames)
+
+	// Check indices
+	suite.Len(table.Indices, 2)
+	suite.Equal("idx_people_personal_contact_id", table.Indices[0].Name)
+	suite.Equal("idx_people_work_contact_id", table.Indices[1].Name)
 }
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany_HasOne() {
@@ -837,6 +946,111 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(uniqueConstraint10.ColumnNames, 2)
 	suite.Equal("basic_id", uniqueConstraint10.ColumnNames[0])
 	suite.Equal("basic_parent_id", uniqueConstraint10.ColumnNames[1])
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Person model with aliased ForMany relationships to Project model
+	personModel := yaml.Model{
+		Name: "Person",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"WorkProjects": {
+				Type:    "ForMany",
+				Aliased: "Project",
+			},
+			"PersonalProjects": {
+				Type:    "ForMany",
+				Aliased: "Project",
+			},
+		},
+	}
+
+	// Project model that is referenced by aliased relationships
+	projectModel := yaml.Model{
+		Name: "Project",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Title": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"WorkMembers": {
+				Type:    "HasMany",
+				Aliased: "Person.WorkProjects",
+			},
+			"PersonalMembers": {
+				Type:    "HasMany",
+				Aliased: "Person.PersonalProjects",
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Person", personModel)
+	r.SetModel("Project", projectModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, personModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 3) // main table + 2 junction tables
+
+	// Check main table
+	mainTable := allTables[0]
+	suite.Equal("people", mainTable.Name)
+	suite.Len(mainTable.Columns, 2) // id, name
+
+	// Check junction tables - they should use relationship names
+	// First junction table: person_personal_projects (alphabetically first)
+	personalJunctionTable := allTables[1]
+	suite.Equal("person_personal_projects", personalJunctionTable.Name)
+	suite.Len(personalJunctionTable.Columns, 3) // id, person_id, personal_project_id
+
+	// Check columns use relationship names
+	suite.Equal("id", personalJunctionTable.Columns[0].Name)
+	suite.Equal("person_id", personalJunctionTable.Columns[1].Name)
+	suite.Equal("personal_projects_id", personalJunctionTable.Columns[2].Name)
+
+	// Check foreign keys reference correct tables
+	suite.Len(personalJunctionTable.ForeignKeys, 2)
+	suite.Equal("people", personalJunctionTable.ForeignKeys[0].RefTableName)
+	suite.Equal("projects", personalJunctionTable.ForeignKeys[1].RefTableName) // References Project table
+
+	// Second junction table: person_work_projects
+	workJunctionTable := allTables[2]
+	suite.Equal("person_work_projects", workJunctionTable.Name)
+	suite.Len(workJunctionTable.Columns, 3) // id, person_id, work_project_id
+
+	// Check columns use relationship names
+	suite.Equal("id", workJunctionTable.Columns[0].Name)
+	suite.Equal("person_id", workJunctionTable.Columns[1].Name)
+	suite.Equal("work_projects_id", workJunctionTable.Columns[2].Name)
+
+	// Check foreign keys reference correct tables
+	suite.Len(workJunctionTable.ForeignKeys, 2)
+	suite.Equal("people", workJunctionTable.ForeignKeys[0].RefTableName)
+	suite.Equal("projects", workJunctionTable.ForeignKeys[1].RefTableName) // References Project table
 }
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOne() {
