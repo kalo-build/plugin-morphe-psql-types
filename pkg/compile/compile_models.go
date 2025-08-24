@@ -53,14 +53,21 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	if validateConfigErr != nil {
 		return nil, validateConfigErr
 	}
-	validateMorpheErr := model.Validate(r.GetAllEnums())
-	if validateMorpheErr != nil {
-		return nil, validateMorpheErr
+
+	validateModelErr := model.Validate(r.GetAllEnums())
+	if validateModelErr != nil {
+		return nil, validateModelErr
 	}
 
 	validatePolyErr := validatePolymorphicRelationships(r, model)
 	if validatePolyErr != nil {
 		return nil, validatePolyErr
+	}
+
+	// Validate aliased relations
+	validateAliasErr := validateAliasedRelations(r, model)
+	if validateAliasErr != nil {
+		return nil, validateAliasErr
 	}
 
 	schema := config.MorpheModelsConfig.Schema
@@ -844,4 +851,21 @@ func formatCyclePath(cyclePath []string, initialRelation string) string {
 	}
 
 	return result
+}
+
+// validateAliasedRelations validates that all aliased target models exist in the registry
+func validateAliasedRelations(r *registry.Registry, model yaml.Model) error {
+	for relationName, relation := range model.Related {
+		targetModelName := yamlops.GetRelationTargetName(relationName, relation.Aliased)
+		
+		// Only validate if the target is different (i.e., aliased)
+		if targetModelName != relationName {
+			_, err := r.GetModel(targetModelName)
+			if err != nil {
+				return fmt.Errorf("aliased target model '%s' for relation '%s' in model '%s' not found", 
+					targetModelName, relationName, model.Name)
+			}
+		}
+	}
+	return nil
 }
