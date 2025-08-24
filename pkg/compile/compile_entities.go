@@ -65,7 +65,7 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 		return nil, validateConfigErr
 	}
 
-	validateEntityErr := entity.Validate(r.GetAllModels(), r.GetAllEnums())
+	validateEntityErr := entity.Validate(r.GetAllEntities(), r.GetAllModels(), r.GetAllEnums())
 	if validateEntityErr != nil {
 		return nil, validateEntityErr
 	}
