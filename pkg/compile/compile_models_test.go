@@ -496,7 +496,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne(
 	suite.Equal("basics", index0.TableName)
 	suite.Len(index0.Columns, 1)
 	suite.Equal("basic_parent_id", index0.Columns[0])
-	
+
 	suite.Len(table0.UniqueConstraints, 0)
 }
 
@@ -530,7 +530,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne_
 			},
 		},
 	}
-	
+
 	// Contact model that is referenced by aliased relationships
 	contactModel := yaml.Model{
 		Name: "Contact",
@@ -589,7 +589,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne_
 
 	// Check foreign keys - they should reference the correct target table
 	suite.Len(table.ForeignKeys, 2)
-	
+
 	// Personal contact foreign key (comes first alphabetically)
 	suite.Equal("fk_people_personal_contact_id", table.ForeignKeys[0].Name)
 	suite.Equal("people", table.ForeignKeys[0].TableName)
@@ -2478,4 +2478,362 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_Circula
 	suite.ErrorContains(allTablesErr, "infinite loop")
 	suite.ErrorContains(allTablesErr, "UserProfile -[LinkedContent]-> BlogPost")
 	suite.Nil(allTables)
+}
+
+// Test ForOnePoly with aliasing
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOnePoly_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Define target models that will be referenced by aliases
+	documentModel := yaml.Model{
+		Name: "Document",
+		Fields: map[string]yaml.ModelField{
+			"ID":    {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	videoModel := yaml.Model{
+		Name: "Video",
+		Fields: map[string]yaml.ModelField{
+			"ID":       {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Duration": {Type: yaml.ModelFieldTypeInteger},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	imageModel := yaml.Model{
+		Name: "Image",
+		Fields: map[string]yaml.ModelField{
+			"ID":     {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Width":  {Type: yaml.ModelFieldTypeInteger},
+			"Height": {Type: yaml.ModelFieldTypeInteger},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	// Comment model with ForOnePoly using aliases
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Text": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"CommentableResource": {
+				Type:    "ForOnePoly",
+				For:     []string{"Document", "Video", "Image"},
+				Aliased: "Resource", // This is an alias that doesn't map to any model
+			},
+		},
+	}
+
+	// Revision model with different ForOnePoly alias
+	revisionModel := yaml.Model{
+		Name: "Revision",
+		Fields: map[string]yaml.ModelField{
+			"ID":      {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Version": {Type: yaml.ModelFieldTypeInteger},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"VersionedContent": {
+				Type:    "ForOnePoly",
+				For:     []string{"Document", "Video"},
+				Aliased: "Content", // Different alias for same target models
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Document", documentModel)
+	r.SetModel("Video", videoModel)
+	r.SetModel("Image", imageModel)
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Revision", revisionModel)
+
+	// Test Comment model
+	commentTables, commentErr := compile.MorpheModelToPSQLTables(config, r, commentModel)
+
+	suite.Nil(commentErr)
+	suite.Len(commentTables, 1)
+
+	commentTable := commentTables[0]
+	suite.Equal("comments", commentTable.Name)
+	suite.Len(commentTable.Columns, 4) // id, text, commentable_resource_type, commentable_resource_id
+
+	// First two columns should be the model fields
+	suite.Equal("id", commentTable.Columns[0].Name)
+	suite.Equal("text", commentTable.Columns[1].Name)
+
+	// Check that polymorphic columns use the relationship name, not the alias
+	suite.Equal("commentable_resource_type", commentTable.Columns[2].Name)
+	suite.Equal(psqldef.PSQLTypeText, commentTable.Columns[2].Type)
+	suite.True(commentTable.Columns[2].NotNull)
+
+	suite.Equal("commentable_resource_id", commentTable.Columns[3].Name)
+	suite.Equal(psqldef.PSQLTypeText, commentTable.Columns[3].Type)
+	suite.True(commentTable.Columns[3].NotNull)
+
+	// No foreign keys for polymorphic columns
+	suite.Len(commentTable.ForeignKeys, 0)
+
+	// Test Revision model with different alias
+	revisionTables, revisionErr := compile.MorpheModelToPSQLTables(config, r, revisionModel)
+
+	suite.Nil(revisionErr)
+	suite.Len(revisionTables, 1)
+
+	revisionTable := revisionTables[0]
+	suite.Equal("revisions", revisionTable.Name)
+
+	// Check that columns use the relationship name, not the alias
+	suite.Equal("versioned_content_type", revisionTable.Columns[2].Name)
+	suite.Equal("versioned_content_id", revisionTable.Columns[3].Name)
+}
+
+// Test ForManyPoly with aliasing
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForManyPoly_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Define target models
+	documentModel := yaml.Model{
+		Name: "Document",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	projectModel := yaml.Model{
+		Name: "Project",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	userModel := yaml.Model{
+		Name: "User",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	// Tag model with ForManyPoly using alias
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"TaggedItems": {
+				Type:    "ForManyPoly",
+				For:     []string{"Document", "Project", "User"},
+				Aliased: "Item", // Alias that doesn't map to any model
+			},
+		},
+	}
+
+	// Category model with different ForManyPoly alias
+	categoryModel := yaml.Model{
+		Name: "Category",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"CategorizedResources": {
+				Type:    "ForManyPoly",
+				For:     []string{"Document", "Project"},
+				Aliased: "Resource", // Different alias
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Document", documentModel)
+	r.SetModel("Project", projectModel)
+	r.SetModel("User", userModel)
+	r.SetModel("Tag", tagModel)
+	r.SetModel("Category", categoryModel)
+
+	// Test Tag model junction table
+	tagTables, tagErr := compile.MorpheModelToPSQLTables(config, r, tagModel)
+
+	suite.Nil(tagErr)
+	suite.Len(tagTables, 2) // tag table + junction table
+
+	// Find the junction table
+	var junctionTable *psqldef.Table
+	for _, table := range tagTables {
+		if table.Name != "tags" {
+			junctionTable = table
+			break
+		}
+	}
+
+	suite.NotNil(junctionTable)
+	suite.Equal("tag_tagged_items", junctionTable.Name) // Uses relationship name, not alias
+
+	// Check junction table columns
+	suite.Len(junctionTable.Columns, 4) // id, tag_id, tagged_items_type, tagged_items_id
+
+	// Find type and id columns
+	var typeCol, idCol *psqldef.TableColumn
+	for i := range junctionTable.Columns {
+		if junctionTable.Columns[i].Name == "tagged_items_type" {
+			typeCol = &junctionTable.Columns[i]
+		}
+		if junctionTable.Columns[i].Name == "tagged_items_id" {
+			idCol = &junctionTable.Columns[i]
+		}
+	}
+
+	suite.NotNil(typeCol)
+	suite.Equal(psqldef.PSQLTypeText, typeCol.Type)
+	suite.NotNil(idCol)
+	suite.Equal(psqldef.PSQLTypeText, idCol.Type)
+
+	// Only one foreign key for the source model
+	suite.Len(junctionTable.ForeignKeys, 1)
+	suite.Equal("tag_id", junctionTable.ForeignKeys[0].ColumnNames[0])
+
+	// Test Category model with different alias
+	categoryTables, categoryErr := compile.MorpheModelToPSQLTables(config, r, categoryModel)
+
+	suite.Nil(categoryErr)
+	suite.Len(categoryTables, 2)
+
+	// Find the junction table
+	var categoryJunction *psqldef.Table
+	for _, table := range categoryTables {
+		if table.Name == "category_categorized_resources" {
+			categoryJunction = table
+			break
+		}
+	}
+
+	suite.NotNil(categoryJunction)
+	// Columns should use relationship name, not alias
+	var found bool
+	for _, col := range categoryJunction.Columns {
+		if col.Name == "categorized_resources_type" || col.Name == "categorized_resources_id" {
+			found = true
+			break
+		}
+	}
+	suite.True(found)
+}
+
+// Test polymorphic inverse aliasing pattern (HasOnePoly with through + aliased)
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOnePoly_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Comment model with ForOnePoly relationship
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Text": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Task"},
+			},
+		},
+	}
+
+	// Post model with semantic alias for inverse relationship
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"ID":    {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Note": { // Semantic field name
+				Type:    "HasOnePoly",
+				Through: "Commentable",
+				Aliased: "Comment", // Actual model type
+			},
+		},
+	}
+
+	// Task model with different semantic alias
+	taskModel := yaml.Model{
+		Name: "Task",
+		Fields: map[string]yaml.ModelField{
+			"ID":     {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Status": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"StatusUpdate": { // Different semantic field name
+				Type:    "HasOnePoly",
+				Through: "Commentable",
+				Aliased: "Comment", // Same actual model type
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Post", postModel)
+	r.SetModel("Task", taskModel)
+
+	// Test Post model - should not generate any columns for HasOnePoly
+	postTables, postErr := compile.MorpheModelToPSQLTables(config, r, postModel)
+
+	suite.Nil(postErr)
+	suite.Len(postTables, 1)
+
+	postTable := postTables[0]
+	suite.Equal("posts", postTable.Name)
+	suite.Len(postTable.Columns, 2) // Only id and title, no columns for HasOnePoly
+
+	// Test Task model - also no columns for HasOnePoly
+	taskTables, taskErr := compile.MorpheModelToPSQLTables(config, r, taskModel)
+
+	suite.Nil(taskErr)
+	suite.Len(taskTables, 1)
+
+	taskTable := taskTables[0]
+	suite.Equal("tasks", taskTable.Name)
+	suite.Len(taskTable.Columns, 2) // Only id and status
 }

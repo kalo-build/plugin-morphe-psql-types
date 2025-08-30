@@ -1528,7 +1528,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 	if err != nil {
 		suite.T().Logf("Error compiling entity: %v", err)
 	}
-	
+
 	suite.Nil(err)
 	suite.NotNil(view)
 
@@ -1540,22 +1540,22 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 
 	// Check columns
 	suite.Len(view.Columns, 6) // id, name, work_email, work_phone, personal_email, personal_phone
-	
+
 	suite.Equal("id", view.Columns[0].Name)
 	suite.Equal("person_profiles.id", view.Columns[0].SourceRef)
-	
+
 	suite.Equal("name", view.Columns[1].Name)
 	suite.Equal("person_profiles.name", view.Columns[1].SourceRef)
-	
+
 	suite.Equal("work_email", view.Columns[2].Name)
 	suite.Equal("work_contacts.email", view.Columns[2].SourceRef)
-	
+
 	suite.Equal("work_phone", view.Columns[3].Name)
 	suite.Equal("work_contacts.phone", view.Columns[3].SourceRef)
-	
+
 	suite.Equal("personal_email", view.Columns[4].Name)
 	suite.Equal("personal_contacts.email", view.Columns[4].SourceRef)
-	
+
 	suite.Equal("personal_phone", view.Columns[5].Name)
 	suite.Equal("personal_contacts.phone", view.Columns[5].SourceRef)
 
@@ -1613,7 +1613,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheModelToPSQLTables_Aliased_Error
 
 	// Try to compile - should fail
 	_, err := compile.MorpheModelToPSQLTables(config, r, personModel)
-	
+
 	suite.NotNil(err)
 	suite.Contains(err.Error(), "NonExistentModel")
 }
@@ -1631,3 +1631,239 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 
 }
 */
+
+// Test entity views with polymorphic aliased relationships
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_ForOnePoly_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Document model
+	documentModel := yaml.Model{
+		Name: "Document",
+		Fields: map[string]yaml.ModelField{
+			"ID":    {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	// Video model
+	videoModel := yaml.Model{
+		Name: "Video",
+		Fields: map[string]yaml.ModelField{
+			"ID":       {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Duration": {Type: yaml.ModelFieldTypeInteger},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	// Comment model with ForOnePoly using alias
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Text": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"CommentableResource": {
+				Type:    "ForOnePoly",
+				For:     []string{"Document", "Video"},
+				Aliased: "Resource", // Alias that doesn't map to any model
+			},
+		},
+	}
+
+	// Comment entity
+	commentEntity := yaml.Entity{
+		Name: "CommentView",
+		Fields: map[string]yaml.EntityField{
+			"id":   {Type: "Comment.ID"},
+			"text": {Type: "Comment.Text"},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		// We can't reference CommentableResource fields due to polymorphic nature
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Document", documentModel)
+	r.SetModel("Video", videoModel)
+	r.SetModel("Comment", commentModel)
+	r.SetEntity("CommentView", commentEntity)
+
+	view, viewErr := compile.MorpheEntityToPSQLView(config, r, commentEntity)
+
+	suite.Nil(viewErr)
+	suite.NotNil(view)
+	suite.Equal("comment_view_entities", view.Name)
+
+	// Should have only the explicitly referenced fields (polymorphic columns are not auto-included)
+	suite.Len(view.Columns, 2) // id, text
+
+	// Verify the columns
+	suite.Equal("id", view.Columns[0].Name)
+	suite.Equal("comment_views.id", view.Columns[0].SourceRef)
+
+	suite.Equal("text", view.Columns[1].Name)
+	suite.Equal("comment_views.text", view.Columns[1].SourceRef)
+
+	// Should have no joins for polymorphic relationships
+	suite.Len(view.Joins, 0)
+}
+
+// Test entity views with ForManyPoly aliased relationships
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_ForManyPoly_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Document model
+	documentModel := yaml.Model{
+		Name: "Document",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	// Project model
+	projectModel := yaml.Model{
+		Name: "Project",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+	}
+
+	// Tag model with ForManyPoly using alias
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"TaggedItems": {
+				Type:    "ForManyPoly",
+				For:     []string{"Document", "Project"},
+				Aliased: "Item", // Alias
+			},
+		},
+	}
+
+	// Tag entity
+	tagEntity := yaml.Entity{
+		Name: "TagView",
+		Fields: map[string]yaml.EntityField{
+			"id":   {Type: "Tag.ID"},
+			"name": {Type: "Tag.Name"},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Document", documentModel)
+	r.SetModel("Project", projectModel)
+	r.SetModel("Tag", tagModel)
+	r.SetEntity("TagView", tagEntity)
+
+	view, viewErr := compile.MorpheEntityToPSQLView(config, r, tagEntity)
+
+	suite.Nil(viewErr)
+	suite.NotNil(view)
+	suite.Equal("tag_view_entities", view.Name)
+
+	// ForManyPoly should be simple - only regular fields, no junction table materialization
+	suite.Len(view.Columns, 2) // Only id and name
+
+	// Should have no joins for ForManyPoly relationships
+	suite.Len(view.Joins, 0)
+}
+
+// Test the polymorphic inverse aliasing pattern in entities
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_HasOnePoly_Aliased() {
+	config := suite.getCompileConfig()
+
+	// Comment model with ForOnePoly
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Text": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Commentable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Task"},
+			},
+		},
+	}
+
+	// Post model with semantic alias
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"ID":    {Type: yaml.ModelFieldTypeAutoIncrement},
+			"Title": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Note": { // Semantic field name
+				Type:    "HasOnePoly",
+				Through: "Commentable",
+				Aliased: "Comment",
+			},
+		},
+	}
+
+	// Post entity
+	postEntity := yaml.Entity{
+		Name: "PostView",
+		Fields: map[string]yaml.EntityField{
+			"id":    {Type: "Post.ID"},
+			"title": {Type: "Post.Title"},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Comment", commentModel)
+	r.SetModel("Post", postModel)
+	r.SetEntity("PostView", postEntity)
+
+	view, viewErr := compile.MorpheEntityToPSQLView(config, r, postEntity)
+
+	suite.Nil(viewErr)
+	suite.NotNil(view)
+	suite.Equal("post_view_entities", view.Name)
+
+	// HasOnePoly should not be materialized - only regular fields
+	suite.Len(view.Columns, 2) // Only id and title
+
+	// Should have no joins for HasOnePoly relationships
+	suite.Len(view.Joins, 0)
+}
