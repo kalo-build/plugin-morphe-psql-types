@@ -492,7 +492,7 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForOne(
 
 	suite.Len(table0.Indices, 1)
 	index0 := table0.Indices[0]
-	suite.Equal("basic_parent_id_idx", index0.Name)
+	suite.Equal("idx_basics_basic_parent_id", index0.Name)
 	suite.Equal("basics", index0.TableName)
 	suite.Len(index0.Columns, 1)
 	suite.Equal("basic_parent_id", index0.Columns[0])
@@ -1051,6 +1051,41 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 	suite.Len(workJunctionTable.ForeignKeys, 2)
 	suite.Equal("people", workJunctionTable.ForeignKeys[0].RefTableName)
 	suite.Equal("projects", workJunctionTable.ForeignKeys[1].RefTableName) // References Project table
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_Aliased_MissingTarget() {
+	config := suite.getCompileConfig()
+
+	// Person model with aliased relationship to non-existent model
+	personModel := yaml.Model{
+		Name: "Person",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"WorkContact": {
+				Type:    "ForOne",
+				Aliased: "NonExistentModel", // This should cause an error
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Person", personModel)
+
+	// Try to compile - should fail with validation error
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, personModel)
+
+	suite.NotNil(allTablesErr)
+	suite.Contains(allTablesErr.Error(), "aliased target model 'NonExistentModel' for relation 'WorkContact' in model 'Person' not found")
+	suite.Nil(allTables)
 }
 
 func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOne() {
