@@ -1,0 +1,21 @@
+name: Contact
+fields:
+  ID:
+    type: AutoIncrement
+  Email:
+    type: String
+  Phone:
+    type: String
+  Address:
+    type: String
+identifiers:
+  primary:
+    fields:
+      - ID
+related:
+  PersonsAsWork:
+    type: HasMany
+    aliased: Person.WorkContact
+  PersonsAsPersonal:
+    type: HasMany
+    aliased: Person.PersonalContact

@@ -188,14 +188,17 @@ func processFieldPath(ctx *entityCompileContext, fieldName string, relationshipC
 		}
 
 		// Handle regular relationships - set up join and continue traversal
+		// Use relationName for table naming to maintain backward compatibility
 		relatedTableName := Pluralize(strcase.ToSnakeCaseLower(relationName))
 
 		// Record that we need a join to this table
 		ctx.joinTables[relatedTableName] = true
+		// Store the relationship name for join setup (keeping existing behavior)
 		ctx.joinTableRelationships[relatedTableName] = relationName
 
-		// Update current context for next iteration
-		currentModelName = relationName
+		// Update current context for next iteration - use the actual target model
+		targetModelName := yamlops.GetRelationTargetName(relationName, relation.Aliased)
+		currentModelName = targetModelName
 		currentTableName = relatedTableName
 	}
 
