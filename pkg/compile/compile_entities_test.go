@@ -1547,33 +1547,23 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 	suite.Equal("name", view.Columns[1].Name)
 	suite.Equal("person_profiles.name", view.Columns[1].SourceRef)
 
-	suite.Equal("work_email", view.Columns[2].Name)
-	suite.Equal("work_contacts.email", view.Columns[2].SourceRef)
+	suite.Equal("personal_email", view.Columns[2].Name)
+	suite.Equal("personal_contacts.email", view.Columns[2].SourceRef)
 
-	suite.Equal("work_phone", view.Columns[3].Name)
-	suite.Equal("work_contacts.phone", view.Columns[3].SourceRef)
+	suite.Equal("personal_phone", view.Columns[3].Name)
+	suite.Equal("personal_contacts.phone", view.Columns[3].SourceRef)
 
-	suite.Equal("personal_email", view.Columns[4].Name)
-	suite.Equal("personal_contacts.email", view.Columns[4].SourceRef)
+	suite.Equal("work_email", view.Columns[4].Name)
+	suite.Equal("work_contacts.email", view.Columns[4].SourceRef)
 
-	suite.Equal("personal_phone", view.Columns[5].Name)
-	suite.Equal("personal_contacts.phone", view.Columns[5].SourceRef)
+	suite.Equal("work_phone", view.Columns[5].Name)
+	suite.Equal("work_contacts.phone", view.Columns[5].SourceRef)
 
 	// Check joins - there should be 2 joins for the aliased relationships
 	suite.Len(view.Joins, 2)
 
-	// Join for WorkContact (uses relationship name for table alias)
-	workJoin := view.Joins[0]
-	suite.Equal("LEFT", workJoin.Type)
-	suite.Equal("public", workJoin.Schema)
-	suite.Equal("work_contacts", workJoin.Table)
-	suite.Equal("work_contacts", workJoin.Alias)
-	suite.Len(workJoin.Conditions, 1)
-	suite.Equal("person_profiles.id", workJoin.Conditions[0].LeftRef)
-	suite.Equal("work_contacts.id", workJoin.Conditions[0].RightRef)
-
-	// Join for PersonalContact (uses relationship name for table alias)
-	personalJoin := view.Joins[1]
+	// Join for PersonalContact (processed first alphabetically)
+	personalJoin := view.Joins[0]
 	suite.Equal("LEFT", personalJoin.Type)
 	suite.Equal("public", personalJoin.Schema)
 	suite.Equal("personal_contacts", personalJoin.Table)
@@ -1581,6 +1571,16 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 	suite.Len(personalJoin.Conditions, 1)
 	suite.Equal("person_profiles.id", personalJoin.Conditions[0].LeftRef)
 	suite.Equal("personal_contacts.id", personalJoin.Conditions[0].RightRef)
+
+	// Join for WorkContact (processed second alphabetically)
+	workJoin := view.Joins[1]
+	suite.Equal("LEFT", workJoin.Type)
+	suite.Equal("public", workJoin.Schema)
+	suite.Equal("work_contacts", workJoin.Table)
+	suite.Equal("work_contacts", workJoin.Alias)
+	suite.Len(workJoin.Conditions, 1)
+	suite.Equal("person_profiles.id", workJoin.Conditions[0].LeftRef)
+	suite.Equal("work_contacts.id", workJoin.Conditions[0].RightRef)
 }
 
 // TestMorpheModelToPSQLTables_Aliased_ErrorHandling tests error cases for aliased relationships
@@ -1617,20 +1617,6 @@ func (suite *CompileEntitiesTestSuite) TestMorpheModelToPSQLTables_Aliased_Error
 	suite.NotNil(err)
 	suite.Contains(err.Error(), "NonExistentModel")
 }
-
-// Note: Full entity field path testing with aliased relationships requires
-// morphe-go to support aliasing in entity validation. Currently, the validation
-// happens before our compilation code can resolve aliases.
-// Once morphe-go is updated, the TestMorpheEntityToPSQLView_FieldPath_AliasedRelationships
-// test below can be uncommented and used.
-
-/*
-func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_AliasedRelationships() {
-
-// ... existing code ...
-
-}
-*/
 
 // Test entity views with polymorphic aliased relationships
 func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_ForOnePoly_Aliased() {

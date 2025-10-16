@@ -7,7 +7,7 @@ require (
 	github.com/gertd/go-pluralize v0.2.1
 	github.com/kalo-build/clone v0.0.0-20250329082958-41db0353412f
 	github.com/kalo-build/go-util v0.0.0-20250329083327-00e97aeff9b7
-	github.com/kalo-build/morphe-go v0.0.0-20250824082856-62352ec5b6a9
+	github.com/kalo-build/morphe-go v0.0.0-20251016080731-9aae9ab2af3e
 	github.com/stretchr/testify v1.10.0
 )
 

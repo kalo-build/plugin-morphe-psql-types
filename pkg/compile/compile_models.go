@@ -860,6 +860,11 @@ func validateAliasedRelations(r *registry.Registry, model yaml.Model) error {
 		
 		// Only validate if the target is different (i.e., aliased)
 		if targetModelName != relationName {
+			// Skip validation for polymorphic relationships - aliases are conceptual names
+			if yamlops.IsRelationPoly(relation.Type) {
+				continue
+			}
+			
 			_, err := r.GetModel(targetModelName)
 			if err != nil {
 				return fmt.Errorf("aliased target model '%s' for relation '%s' in model '%s' not found", 
