@@ -1,0 +1,21 @@
+name: Project
+fields:
+  ID:
+    type: AutoIncrement
+  Title:
+    type: String
+  Description:
+    type: String
+  Status:
+    type: String
+identifiers:
+  primary:
+    fields:
+      - ID
+related:
+  WorkMembers:
+    type: HasMany
+    aliased: Person.WorkProjects
+  PersonalMembers:
+    type: HasMany
+    aliased: Person.PersonalProjects

@@ -65,7 +65,7 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 		return nil, validateConfigErr
 	}
 
-	validateEntityErr := entity.Validate(r.GetAllModels(), r.GetAllEnums())
+	validateEntityErr := entity.Validate(r.GetAllEntities(), r.GetAllModels(), r.GetAllEnums())
 	if validateEntityErr != nil {
 		return nil, validateEntityErr
 	}
@@ -87,13 +87,12 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 	}
 
 	context := &entityCompileContext{
-		config:                 config,
-		registry:               r,
-		entity:                 entity,
-		view:                   view,
-		tableName:              tableName,
-		joinTables:             make(map[string]bool),
-		joinTableRelationships: make(map[string]string),
+		config:    config,
+		registry:  r,
+		entity:    entity,
+		view:      view,
+		tableName: tableName,
+		joins:     make(map[string]joinInfo),
 	}
 
 	if err := processEntityFields(context); err != nil {
@@ -107,15 +106,20 @@ func morpheEntityToPSQLView(config cfg.MorpheConfig, r *registry.Registry, entit
 	return view, nil
 }
 
+// joinInfo holds information about a join relationship
+type joinInfo struct {
+	relationshipName string // The name of the relationship (e.g., "WorkContact")
+	sourceModelName  string // The model that owns this relationship (e.g., "Person")
+}
+
 // entityCompileContext holds all the context needed for entity compilation
 type entityCompileContext struct {
-	config                 cfg.MorpheConfig
-	registry               *registry.Registry
-	entity                 yaml.Entity
-	view                   *psqldef.View
-	tableName              string
-	joinTables             map[string]bool
-	joinTableRelationships map[string]string
+	config    cfg.MorpheConfig
+	registry  *registry.Registry
+	entity    yaml.Entity
+	view      *psqldef.View
+	tableName string
+	joins     map[string]joinInfo // maps join table name to join information
 }
 
 // processEntityFields processes all entity fields and adds appropriate columns to the view
@@ -188,14 +192,18 @@ func processFieldPath(ctx *entityCompileContext, fieldName string, relationshipC
 		}
 
 		// Handle regular relationships - set up join and continue traversal
+		// Use relationName for table naming to maintain backward compatibility
 		relatedTableName := Pluralize(strcase.ToSnakeCaseLower(relationName))
 
-		// Record that we need a join to this table
-		ctx.joinTables[relatedTableName] = true
-		ctx.joinTableRelationships[relatedTableName] = relationName
+		// Record join information for this table
+		ctx.joins[relatedTableName] = joinInfo{
+			relationshipName: relationName,
+			sourceModelName:  currentModelName,
+		}
 
-		// Update current context for next iteration
-		currentModelName = relationName
+		// Update current context for next iteration - use the actual target model
+		targetModelName := yamlops.GetRelationTargetName(relationName, relation.Aliased)
+		currentModelName = targetModelName
 		currentTableName = relatedTableName
 	}
 
@@ -300,13 +308,12 @@ func addRegularColumn(ctx *entityCompileContext, columnName, tableName, fieldNam
 
 // setupJoinsForRegularRelationships sets up joins for all recorded regular relationships
 func setupJoinsForRegularRelationships(ctx *entityCompileContext) error {
-	for joinTable := range ctx.joinTables {
-		relatedModelName := ctx.joinTableRelationships[joinTable]
-		if relatedModelName == "" {
-			continue
-		}
+	// Sort join tables for deterministic order
+	sortedJoinTables := core.MapKeysSorted(ctx.joins)
 
-		if err := addJoinClause(ctx, joinTable, relatedModelName); err != nil {
+	for _, joinTable := range sortedJoinTables {
+		joinInfo := ctx.joins[joinTable]
+		if err := addJoinClause(ctx, joinTable, joinInfo); err != nil {
 			return err
 		}
 	}
@@ -314,25 +321,32 @@ func setupJoinsForRegularRelationships(ctx *entityCompileContext) error {
 }
 
 // addJoinClause adds a single join clause to the view
-func addJoinClause(ctx *entityCompileContext, joinTable, relatedModelName string) error {
-	model, err := ctx.registry.GetModel(ctx.entity.Name)
+func addJoinClause(ctx *entityCompileContext, joinTable string, info joinInfo) error {
+	model, err := ctx.registry.GetModel(info.sourceModelName)
 	if err != nil {
-		return err
+		return fmt.Errorf("model %s not found in registry", info.sourceModelName)
 	}
 
-	_, relationshipExists := model.Related[relatedModelName]
+	relation, relationshipExists := model.Related[info.relationshipName]
 	if !relationshipExists {
-		return fmt.Errorf("relationship %s not found in model %s", relatedModelName, ctx.entity.Name)
+		return fmt.Errorf("relationship %s not found in model %s", info.relationshipName, info.sourceModelName)
+	}
+
+	// Get the target model from the relationship
+	targetModelName := yamlops.GetRelationTargetName(info.relationshipName, relation.Aliased)
+	targetModel, err := ctx.registry.GetModel(targetModelName)
+	if err != nil {
+		return fmt.Errorf("target model %s not found in registry (via relationship %s)", targetModelName, info.relationshipName)
 	}
 
 	rootPrimaryId, rootExists := model.Identifiers["primary"]
 	if !rootExists {
-		return fmt.Errorf("primary identifier not found in model '%s'", ctx.entity.Name)
+		return fmt.Errorf("primary identifier not found in model '%s'", info.sourceModelName)
 	}
 
-	relatedPrimaryId, relatedExists := model.Identifiers["primary"]
+	relatedPrimaryId, relatedExists := targetModel.Identifiers["primary"]
 	if !relatedExists {
-		return fmt.Errorf("primary identifier not found in model '%s'", relatedModelName)
+		return fmt.Errorf("primary identifier not found in model '%s'", targetModelName)
 	}
 
 	rootPrimaryIdName := strcase.ToSnakeCaseLower(rootPrimaryId.Fields[0])
