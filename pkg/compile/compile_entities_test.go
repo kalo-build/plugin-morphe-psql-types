@@ -1425,6 +1425,133 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_Mixed_Polymorp
 	suite.Equal("users.id", join.Conditions[0].RightRef)
 }
 
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_AliasedRelationships_DifferentPrimaryKeys() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	// Person entity that references fields through aliased relationships
+	// This test specifically uses different primary key names to test join generation
+	personEntity := yaml.Entity{
+		Name: "PersonProfile",
+		Fields: map[string]yaml.EntityField{
+			"personId": {
+				Type: "Person.PersonID",
+			},
+			"name": {
+				Type: "Person.Name",
+			},
+			"workEmail": {
+				Type: "Person.WorkContact.Email",
+			},
+			"workPhone": {
+				Type: "Person.WorkContact.Phone",
+			},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {
+				Fields: []string{"personId"},
+			},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	// Person model with PersonID as primary key
+	personModel := yaml.Model{
+		Name: "Person",
+		Fields: map[string]yaml.ModelField{
+			"PersonID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Name": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"PersonID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"WorkContact": {
+				Type:    "ForOne",
+				Aliased: "Contact",
+			},
+		},
+	}
+
+	// Contact model with ContactID as primary key
+	contactModel := yaml.Model{
+		Name: "Contact",
+		Fields: map[string]yaml.ModelField{
+			"ContactID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"Email": {
+				Type: yaml.ModelFieldTypeString,
+			},
+			"Phone": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ContactID"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"PersonsAsWork": {
+				Type:    "HasMany",
+				Aliased: "Person.WorkContact",
+			},
+		},
+	}
+
+	r.SetEntity("PersonProfile", personEntity)
+	r.SetModel("Person", personModel)
+	r.SetModel("Contact", contactModel)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, personEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+
+	// Check view basics
+	suite.Equal("public", view.Schema)
+	suite.Equal("person_profile_entities", view.Name)
+	suite.Equal("public", view.FromSchema)
+	suite.Equal("person_profiles", view.FromTable)
+
+	// Check columns (sorted alphabetically: name, personId, workEmail, workPhone)
+	suite.Len(view.Columns, 4)
+
+	suite.Equal("name", view.Columns[0].Name)
+	suite.Equal("person_profiles.name", view.Columns[0].SourceRef)
+
+	suite.Equal("person_id", view.Columns[1].Name)
+	suite.Equal("person_profiles.person_id", view.Columns[1].SourceRef)
+
+	suite.Equal("work_email", view.Columns[2].Name)
+	suite.Equal("work_contacts.email", view.Columns[2].SourceRef)
+
+	suite.Equal("work_phone", view.Columns[3].Name)
+	suite.Equal("work_contacts.phone", view.Columns[3].SourceRef)
+
+	// Check join - this is the critical part that tests the bug fix
+	suite.Len(view.Joins, 1)
+
+	workJoin := view.Joins[0]
+	suite.Equal("LEFT", workJoin.Type)
+	suite.Equal("public", workJoin.Schema)
+	suite.Equal("work_contacts", workJoin.Table)
+	suite.Equal("work_contacts", workJoin.Alias)
+	suite.Len(workJoin.Conditions, 1)
+
+	// This is the key assertion - the join should use person_id from person_profiles
+	// and contact_id from work_contacts, NOT person_id from both sides
+	suite.Equal("person_profiles.person_id", workJoin.Conditions[0].LeftRef)
+	suite.Equal("work_contacts.contact_id", workJoin.Conditions[0].RightRef)
+}
+
 func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_AliasedRelationships() {
 	config := suite.getCompileConfig()
 	r := registry.NewRegistry()

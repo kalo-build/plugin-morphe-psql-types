@@ -327,9 +327,16 @@ func addJoinClause(ctx *entityCompileContext, joinTable string, info joinInfo) e
 		return fmt.Errorf("model %s not found in registry", info.sourceModelName)
 	}
 
-	_, relationshipExists := model.Related[info.relationshipName]
+	relation, relationshipExists := model.Related[info.relationshipName]
 	if !relationshipExists {
 		return fmt.Errorf("relationship %s not found in model %s", info.relationshipName, info.sourceModelName)
+	}
+
+	// Get the target model from the relationship
+	targetModelName := yamlops.GetRelationTargetName(info.relationshipName, relation.Aliased)
+	targetModel, err := ctx.registry.GetModel(targetModelName)
+	if err != nil {
+		return fmt.Errorf("target model %s not found in registry (via relationship %s)", targetModelName, info.relationshipName)
 	}
 
 	rootPrimaryId, rootExists := model.Identifiers["primary"]
@@ -337,9 +344,9 @@ func addJoinClause(ctx *entityCompileContext, joinTable string, info joinInfo) e
 		return fmt.Errorf("primary identifier not found in model '%s'", info.sourceModelName)
 	}
 
-	relatedPrimaryId, relatedExists := model.Identifiers["primary"]
+	relatedPrimaryId, relatedExists := targetModel.Identifiers["primary"]
 	if !relatedExists {
-		return fmt.Errorf("primary identifier not found in model '%s'", info.relationshipName)
+		return fmt.Errorf("primary identifier not found in model '%s'", targetModelName)
 	}
 
 	rootPrimaryIdName := strcase.ToSnakeCaseLower(rootPrimaryId.Fields[0])
