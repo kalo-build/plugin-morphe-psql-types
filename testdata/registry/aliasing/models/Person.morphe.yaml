@@ -17,9 +17,9 @@ related:
   PersonalContact:
     type: ForOne
     aliased: Contact
-  WorkProjects:
+  WorkProject:
     type: ForMany
     aliased: Project
-  PersonalProjects:
+  PersonalProject:
     type: ForMany
     aliased: Project

@@ -12,15 +12,26 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 		return rErr
 	}
 
+	// Track the current order number for ordered migrations
+	currentOrder := 0
+
 	if r.HasEnums() {
 		allEnumTables, compileAllEnumsErr := AllMorpheEnumsToPSQLTables(config, r)
 		if compileAllEnumsErr != nil {
 			return compileAllEnumsErr
 		}
 
-		_, writeEnumTablesErr := WriteAllEnumTableDefinitions(config, allEnumTables)
-		if writeEnumTablesErr != nil {
-			return writeEnumTablesErr
+		if config.EnableOrderedMigrations {
+			var writeEnumTablesErr error
+			_, currentOrder, writeEnumTablesErr = WriteAllEnumTableDefinitionsWithOrder(config, allEnumTables, currentOrder)
+			if writeEnumTablesErr != nil {
+				return writeEnumTablesErr
+			}
+		} else {
+			_, writeEnumTablesErr := WriteAllEnumTableDefinitions(config, allEnumTables)
+			if writeEnumTablesErr != nil {
+				return writeEnumTablesErr
+			}
 		}
 	}
 
@@ -31,9 +42,17 @@ func MorpheToPSQL(config MorpheCompileConfig) error {
 			return compileAllModelsErr
 		}
 
-		_, writeModelTablesErr := WriteAllModelTableDefinitions(config, allModelTables)
-		if writeModelTablesErr != nil {
-			return writeModelTablesErr
+		if config.EnableOrderedMigrations {
+			_, writeModelTablesErr := WriteAllModelTableDefinitionsWithOrder(config, allModelTables, currentOrder)
+			if writeModelTablesErr != nil {
+				return writeModelTablesErr
+			}
+			// Note: We don't track currentOrder further since structures/entities are separate
+		} else {
+			_, writeModelTablesErr := WriteAllModelTableDefinitions(config, allModelTables)
+			if writeModelTablesErr != nil {
+				return writeModelTablesErr
+			}
 		}
 	}
 

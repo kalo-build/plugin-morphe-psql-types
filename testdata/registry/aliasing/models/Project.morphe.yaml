@@ -13,9 +13,9 @@ identifiers:
     fields:
       - ID
 related:
-  WorkMembers:
+  WorkMember:
     type: HasMany
-    aliased: Person.WorkProjects
-  PersonalMembers:
+    aliased: Person.WorkProject
+  PersonalMember:
     type: HasMany
-    aliased: Person.PersonalProjects
+    aliased: Person.PersonalProject

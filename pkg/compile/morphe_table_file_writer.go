@@ -15,6 +15,10 @@ type MorpheTableFileWriter struct {
 }
 
 func (w *MorpheTableFileWriter) WriteTable(tableDefinition *psqldef.Table) ([]byte, error) {
+	return w.WriteTableWithOrder(tableDefinition, 0)
+}
+
+func (w *MorpheTableFileWriter) WriteTableWithOrder(tableDefinition *psqldef.Table, order int) ([]byte, error) {
 	allTableLines, allLinesErr := w.getAllTableLines(tableDefinition)
 	if allLinesErr != nil {
 		return nil, allLinesErr
@@ -25,7 +29,7 @@ func (w *MorpheTableFileWriter) WriteTable(tableDefinition *psqldef.Table) ([]by
 		return nil, tableContentsErr
 	}
 
-	return sqlfile.WriteSQLDefinitionFile(w.TargetDirPath, tableDefinition.Name, tableFileContents)
+	return sqlfile.WriteSQLDefinitionFileWithOrder(w.TargetDirPath, tableDefinition.Name, tableFileContents, order)
 }
 
 func (w *MorpheTableFileWriter) getAllTableLines(tableDefinition *psqldef.Table) ([]string, error) {

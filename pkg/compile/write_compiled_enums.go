@@ -8,28 +8,52 @@ import (
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
+// WriteAllEnumTableDefinitions writes all enum tables without ordering prefixes.
 func WriteAllEnumTableDefinitions(config MorpheCompileConfig, allEnumTableDefs map[string]*psqldef.Table) (CompiledMorpheTables, error) {
+	tables, _, err := WriteAllEnumTableDefinitionsWithOrder(config, allEnumTableDefs, 0)
+	return tables, err
+}
+
+// WriteAllEnumTableDefinitionsWithOrder writes all enum tables with ordering prefixes.
+// Returns the compiled tables and the next order number to use.
+func WriteAllEnumTableDefinitionsWithOrder(config MorpheCompileConfig, allEnumTableDefs map[string]*psqldef.Table, startOrder int) (CompiledMorpheTables, int, error) {
 	allWrittenEnums := CompiledMorpheTables{}
+	currentOrder := startOrder
 
 	sortedEnumNames := core.MapKeysSorted(allEnumTableDefs)
 	for _, enumName := range sortedEnumNames {
+		currentOrder++
 		enumTable := allEnumTableDefs[enumName]
-		enumTable, enumTableContents, writeErr := WriteEnumTableDefinition(config.WriteTableHooks, config.EnumWriter, enumTable)
+		enumTable, enumTableContents, writeErr := WriteEnumTableDefinitionWithOrder(
+			config.WriteTableHooks, config.EnumWriter, enumTable, currentOrder)
 		if writeErr != nil {
-			return nil, writeErr
+			return nil, currentOrder, writeErr
 		}
 		allWrittenEnums.AddCompiledMorpheTable(enumName, enumTable, enumTableContents)
 	}
-	return allWrittenEnums, nil
+	return allWrittenEnums, currentOrder, nil
 }
 
 func WriteEnumTableDefinition(hooks hook.WritePSQLTable, writer write.PSQLTableWriter, enumTable *psqldef.Table) (*psqldef.Table, []byte, error) {
+	return WriteEnumTableDefinitionWithOrder(hooks, writer, enumTable, 0)
+}
+
+func WriteEnumTableDefinitionWithOrder(hooks hook.WritePSQLTable, writer write.PSQLTableWriter, enumTable *psqldef.Table, order int) (*psqldef.Table, []byte, error) {
 	writer, enumTable, writeStartErr := triggerWriteEnumTableStart(hooks, writer, enumTable)
 	if writeStartErr != nil {
 		return nil, nil, triggerWriteEnumTableFailure(hooks, writer, enumTable, writeStartErr)
 	}
 
-	enumTableContents, writeTableErr := writer.WriteTable(enumTable)
+	var enumTableContents []byte
+	var writeTableErr error
+
+	// Check if writer supports ordered writing
+	if orderedWriter, ok := writer.(write.OrderedPSQLTableWriter); ok && order > 0 {
+		enumTableContents, writeTableErr = orderedWriter.WriteTableWithOrder(enumTable, order)
+	} else {
+		enumTableContents, writeTableErr = writer.WriteTable(enumTable)
+	}
+
 	if writeTableErr != nil {
 		return nil, nil, triggerWriteEnumTableFailure(hooks, writer, enumTable, writeTableErr)
 	}

@@ -74,6 +74,12 @@ func main() {
 		compileConfig.OutputPath,
 	)
 
+	// Check for ordered migrations config option
+	if orderedMigrations, ok := compileConfig.Config["orderedMigrations"].(bool); ok && orderedMigrations {
+		morpheConfig.EnableOrderedMigrations = true
+		logInfo(compileConfig.Verbose, "Ordered migrations enabled - files will have numeric prefixes")
+	}
+
 	logInfo(compileConfig.Verbose, "Starting compilation process...")
 	compileErr := compile.MorpheToPSQL(morpheConfig)
 	if compileErr != nil {

@@ -968,11 +968,11 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 			},
 		},
 		Related: map[string]yaml.ModelRelation{
-			"WorkProjects": {
+			"WorkProject": {
 				Type:    "ForMany",
 				Aliased: "Project",
 			},
-			"PersonalProjects": {
+			"PersonalProject": {
 				Type:    "ForMany",
 				Aliased: "Project",
 			},
@@ -998,11 +998,11 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_ForMany
 		Related: map[string]yaml.ModelRelation{
 			"WorkMembers": {
 				Type:    "HasMany",
-				Aliased: "Person.WorkProjects",
+				Aliased: "Person.WorkProject",
 			},
 			"PersonalMembers": {
 				Type:    "HasMany",
-				Aliased: "Person.PersonalProjects",
+				Aliased: "Person.PersonalProject",
 			},
 		},
 	}

@@ -30,6 +30,10 @@ type MorpheCompileConfig struct {
 
 	WriteTableHooks hook.WritePSQLTable
 	WriteViewHooks  hook.WritePSQLView
+
+	// EnableOrderedMigrations enables numeric prefixes on output files (e.g., 001_users.sql)
+	// to ensure correct dependency ordering for database migrations.
+	EnableOrderedMigrations bool
 }
 
 func (config MorpheCompileConfig) Validate() error {

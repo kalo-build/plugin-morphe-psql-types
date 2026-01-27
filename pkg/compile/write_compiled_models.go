@@ -2,36 +2,77 @@ package compile
 
 import (
 	"github.com/kalo-build/clone"
-	"github.com/kalo-build/go-util/core"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/write"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
+// WriteAllModelTableDefinitions writes all model tables with dependency-based ordering.
+// The startOrder parameter is the starting order number (e.g., if enums took 1-5, start at 6).
+// Returns the compiled tables and the next order number to use.
 func WriteAllModelTableDefinitions(config MorpheCompileConfig, allModelTableDefs map[string][]*psqldef.Table) (CompiledMorpheTables, error) {
+	return WriteAllModelTableDefinitionsWithOrder(config, allModelTableDefs, 0)
+}
+
+// WriteAllModelTableDefinitionsWithOrder writes all model tables with dependency-based ordering.
+// The startOrder parameter is the starting order number for file prefixes.
+// Returns the compiled tables and the next order number to use.
+func WriteAllModelTableDefinitionsWithOrder(config MorpheCompileConfig, allModelTableDefs map[string][]*psqldef.Table, startOrder int) (CompiledMorpheTables, error) {
 	allWrittenModels := CompiledMorpheTables{}
 
-	sortedModelNames := core.MapKeysSorted(allModelTableDefs)
-	for _, modelName := range sortedModelNames {
-		modelTables := allModelTableDefs[modelName]
-		for _, modelTable := range modelTables {
-			modelTable, modelTableContents, writeErr := WriteModelTableDefinition(config.WriteTableHooks, config.ModelWriter, modelTable)
-			if writeErr != nil {
-				return nil, writeErr
-			}
-			allWrittenModels.AddCompiledMorpheTable(modelName, modelTable, modelTableContents)
+	// Flatten all tables for dependency sorting
+	allTables := []*psqldef.Table{}
+	tableToModel := make(map[string]string)
+	for modelName, modelTables := range allModelTableDefs {
+		for _, table := range modelTables {
+			allTables = append(allTables, table)
+			tableToModel[table.Name] = modelName
 		}
 	}
+
+	// Sort tables by dependency order
+	sortedTables, sortErr := SortTablesByDependency(allTables)
+	if sortErr != nil {
+		return nil, sortErr
+	}
+
+	// Write tables in dependency order with incrementing order prefix
+	currentOrder := startOrder
+	for _, modelTable := range sortedTables {
+		currentOrder++
+		modelName := tableToModel[modelTable.Name]
+
+		modelTable, modelTableContents, writeErr := WriteModelTableDefinitionWithOrder(
+			config.WriteTableHooks, config.ModelWriter, modelTable, currentOrder)
+		if writeErr != nil {
+			return nil, writeErr
+		}
+		allWrittenModels.AddCompiledMorpheTable(modelName, modelTable, modelTableContents)
+	}
+
 	return allWrittenModels, nil
 }
 
 func WriteModelTableDefinition(hooks hook.WritePSQLTable, writer write.PSQLTableWriter, modelTable *psqldef.Table) (*psqldef.Table, []byte, error) {
+	return WriteModelTableDefinitionWithOrder(hooks, writer, modelTable, 0)
+}
+
+func WriteModelTableDefinitionWithOrder(hooks hook.WritePSQLTable, writer write.PSQLTableWriter, modelTable *psqldef.Table, order int) (*psqldef.Table, []byte, error) {
 	writer, modelTable, writeStartErr := triggerWriteModelTableStart(hooks, writer, modelTable)
 	if writeStartErr != nil {
 		return nil, nil, triggerWriteModelTableFailure(hooks, writer, modelTable, writeStartErr)
 	}
 
-	modelTableContents, writeTableErr := writer.WriteTable(modelTable)
+	var modelTableContents []byte
+	var writeTableErr error
+
+	// Check if writer supports ordered writing
+	if orderedWriter, ok := writer.(write.OrderedPSQLTableWriter); ok && order > 0 {
+		modelTableContents, writeTableErr = orderedWriter.WriteTableWithOrder(modelTable, order)
+	} else {
+		modelTableContents, writeTableErr = writer.WriteTable(modelTable)
+	}
+
 	if writeTableErr != nil {
 		return nil, nil, triggerWriteModelTableFailure(hooks, writer, modelTable, writeTableErr)
 	}

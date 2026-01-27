@@ -343,10 +343,10 @@ related:
     type: ForOne
     aliased: ContactInfo
   
-  WorkProjects:
+  WorkProject:
     type: ForMany
     aliased: Project
-  HobbyProjects:
+  HobbyProject:
     type: ForMany
     aliased: Project
 
