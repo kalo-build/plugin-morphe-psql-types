@@ -1,0 +1,42 @@
+name: "@kalo-build/plugin-morphe-psql-types"
+displayName: "Morphe PostgreSQL Types"
+description: "Generates PostgreSQL DDL schema from Morphe model definitions. Creates tables, indexes, and constraints."
+version: "1.0.0"
+
+input:
+  format: "KA:MO1:YAML1"
+  description: "Morphe YAML schema files"
+  suggestedStore:
+    name: "KA_MO_YAML"
+    type: "localFileSystem"
+    path: "./morphe"
+
+output:
+  format: "KA:MO1:PSQL1"
+  description: "PostgreSQL DDL schema files"
+  suggestedStore:
+    name: "KA_MO_PSQL"
+    type: "localFileSystem"
+    path: "./schema"
+
+configSchema:
+  orderedMigrations:
+    type: boolean
+    default: true
+    description: "Generate migrations with numeric order prefixes"
+  structures:
+    type: object
+    description: "Structure-specific configuration"
+    properties:
+      Schema:
+        type: string
+        default: "public"
+        description: "PostgreSQL schema name for generated tables"
+      UseBigSerial:
+        type: boolean
+        default: false
+        description: "Use BIGSERIAL instead of SERIAL for auto-increment fields"
+      EnablePersistence:
+        type: boolean
+        default: true
+        description: "Generate tables for structures"
