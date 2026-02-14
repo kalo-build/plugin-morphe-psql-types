@@ -1,0 +1,2 @@
+# Force LF line endings for SQL files (generated output uses LF)
+*.sql text eol=lf

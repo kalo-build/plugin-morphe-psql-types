@@ -161,12 +161,10 @@ func (w *MorpheTableFileWriter) getCreateTableLines(tableDefinition *psqldef.Tab
 func (w *MorpheTableFileWriter) formatColumnDefinition(column psqldef.TableColumn) string {
 	parts := []string{column.Name, column.Type.GetSyntax()}
 
-	if column.NotNull {
-		parts = append(parts, "NOT NULL")
-	}
-
 	if column.PrimaryKey {
 		parts = append(parts, "PRIMARY KEY")
+	} else if column.NotNull {
+		parts = append(parts, "NOT NULL")
 	}
 
 	if column.Default != "" {
