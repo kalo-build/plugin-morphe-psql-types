@@ -17,6 +17,16 @@ import (
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/typemap"
 )
 
+// hasAttribute checks if a given attribute is present in the attributes list.
+func hasAttribute(attributes []string, target string) bool {
+	for _, attr := range attributes {
+		if attr == target {
+			return true
+		}
+	}
+	return false
+}
+
 func AllMorpheModelsToPSQLTables(config MorpheCompileConfig, r *registry.Registry) (map[string][]*psqldef.Table, error) {
 	allModelTableDefs := map[string][]*psqldef.Table{}
 	for modelName, model := range r.GetAllModels() {
@@ -162,10 +172,11 @@ func getColumnsForModelFields(config cfg.MorpheConfig, r *registry.Registry, typ
 
 		columnType, supported := typeMap[field.Type]
 		if supported {
+			// Fields are NOT NULL by default; only fields with the "optional" attribute are nullable
 			column := psqldef.TableColumn{
 				Name:       columnName,
 				Type:       columnType,
-				NotNull:    false,
+				NotNull:    !hasAttribute(field.Attributes, "optional"),
 				PrimaryKey: slices.Index(primaryID.Fields, fieldName) != -1,
 				Default:    "",
 			}

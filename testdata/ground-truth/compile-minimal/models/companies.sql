@@ -4,8 +4,8 @@ CREATE SCHEMA IF NOT EXISTS public;
 
 CREATE TABLE IF NOT EXISTS public.companies (
 	id SERIAL PRIMARY KEY,
-	name TEXT,
-	tax_id TEXT
+	name TEXT NOT NULL,
+	tax_id TEXT NOT NULL
 );
 
 -- Indices

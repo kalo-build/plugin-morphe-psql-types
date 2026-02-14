@@ -7,11 +7,39 @@ import (
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
 )
 
-// WriteAllModelTableDefinitions writes all model tables with dependency-based ordering.
-// The startOrder parameter is the starting order number (e.g., if enums took 1-5, start at 6).
-// Returns the compiled tables and the next order number to use.
+// WriteAllModelTableDefinitions writes all model tables with dependency-based ordering but without order prefixes in filenames.
 func WriteAllModelTableDefinitions(config MorpheCompileConfig, allModelTableDefs map[string][]*psqldef.Table) (CompiledMorpheTables, error) {
-	return WriteAllModelTableDefinitionsWithOrder(config, allModelTableDefs, 0)
+	allWrittenModels := CompiledMorpheTables{}
+
+	// Flatten all tables for dependency sorting
+	allTables := []*psqldef.Table{}
+	tableToModel := make(map[string]string)
+	for modelName, modelTables := range allModelTableDefs {
+		for _, table := range modelTables {
+			allTables = append(allTables, table)
+			tableToModel[table.Name] = modelName
+		}
+	}
+
+	// Sort tables by dependency order
+	sortedTables, sortErr := SortTablesByDependency(allTables)
+	if sortErr != nil {
+		return nil, sortErr
+	}
+
+	// Write tables in dependency order without order prefix
+	for _, modelTable := range sortedTables {
+		modelName := tableToModel[modelTable.Name]
+
+		modelTable, modelTableContents, writeErr := WriteModelTableDefinition(
+			config.WriteTableHooks, config.ModelWriter, modelTable)
+		if writeErr != nil {
+			return nil, writeErr
+		}
+		allWrittenModels.AddCompiledMorpheTable(modelName, modelTable, modelTableContents)
+	}
+
+	return allWrittenModels, nil
 }
 
 // WriteAllModelTableDefinitionsWithOrder writes all model tables with dependency-based ordering.

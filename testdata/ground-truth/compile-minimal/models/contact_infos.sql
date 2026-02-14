@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS public;
 
 CREATE TABLE IF NOT EXISTS public.contact_infos (
-	email TEXT,
+	email TEXT NOT NULL,
 	id SERIAL PRIMARY KEY,
 	person_id INTEGER NOT NULL,
 	CONSTRAINT fk_contact_infos_person_id FOREIGN KEY (person_id)

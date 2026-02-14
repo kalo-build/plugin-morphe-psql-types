@@ -2,8 +2,6 @@ name: Tag
 fields:
   ID:
     type: AutoIncrement
-    attributes:
-      - mandatory
   Name:
     type: String
   Color:

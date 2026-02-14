@@ -4,7 +4,6 @@ fields:
     type: Tag.ID
     attributes:
       - immutable
-      - mandatory
   Name:
     type: Tag.Name
   Color:

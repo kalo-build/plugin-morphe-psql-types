@@ -2,8 +2,6 @@ name: Comment
 fields:
   ID:
     type: AutoIncrement
-    attributes:
-      - mandatory
   Content:
     type: String
   CreatedAt:

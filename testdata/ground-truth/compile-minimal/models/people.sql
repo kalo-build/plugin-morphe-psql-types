@@ -3,9 +3,9 @@
 CREATE SCHEMA IF NOT EXISTS public;
 
 CREATE TABLE IF NOT EXISTS public.people (
-	first_name TEXT,
+	first_name TEXT NOT NULL,
 	id SERIAL PRIMARY KEY,
-	last_name TEXT,
+	last_name TEXT NOT NULL,
 	nationality_id INTEGER NOT NULL,
 	company_id INTEGER NOT NULL,
 	CONSTRAINT fk_people_nationality_id FOREIGN KEY (nationality_id)

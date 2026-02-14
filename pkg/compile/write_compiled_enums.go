@@ -10,8 +10,19 @@ import (
 
 // WriteAllEnumTableDefinitions writes all enum tables without ordering prefixes.
 func WriteAllEnumTableDefinitions(config MorpheCompileConfig, allEnumTableDefs map[string]*psqldef.Table) (CompiledMorpheTables, error) {
-	tables, _, err := WriteAllEnumTableDefinitionsWithOrder(config, allEnumTableDefs, 0)
-	return tables, err
+	allWrittenEnums := CompiledMorpheTables{}
+
+	sortedEnumNames := core.MapKeysSorted(allEnumTableDefs)
+	for _, enumName := range sortedEnumNames {
+		enumTable := allEnumTableDefs[enumName]
+		enumTable, enumTableContents, writeErr := WriteEnumTableDefinition(
+			config.WriteTableHooks, config.EnumWriter, enumTable)
+		if writeErr != nil {
+			return nil, writeErr
+		}
+		allWrittenEnums.AddCompiledMorpheTable(enumName, enumTable, enumTableContents)
+	}
+	return allWrittenEnums, nil
 }
 
 // WriteAllEnumTableDefinitionsWithOrder writes all enum tables with ordering prefixes.

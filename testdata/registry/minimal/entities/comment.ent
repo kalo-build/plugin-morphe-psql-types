@@ -4,7 +4,6 @@ fields:
     type: Comment.ID
     attributes:
       - immutable
-      - mandatory
   Content:
     type: Comment.Content
   CreatedAt:
