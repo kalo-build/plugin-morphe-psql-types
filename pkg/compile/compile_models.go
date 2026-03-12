@@ -129,7 +129,10 @@ func morpheModelToPSQLTables(config cfg.MorpheConfig, r *registry.Registry, mode
 	modelTable.Indices = indices
 
 	// Apply spec-compliant processing to the model table
-	addUniqueIndicesFromIdentifiers(&modelTable, model.Identifiers)
+	addUniqueIndicesErr := addUniqueIndicesFromIdentifiers(&modelTable, model.Identifiers, model.Related, r)
+	if addUniqueIndicesErr != nil {
+		return nil, addUniqueIndicesErr
+	}
 	quoteReservedColumnNames(&modelTable)
 	ensureNamedForeignKeyConstraints(&modelTable)
 
@@ -229,11 +232,12 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 		targetModelName := yamlops.GetRelationTargetName(relatedModelName, modelRelation.Aliased)
 
 		if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyOne(relationType) {
+			isOptional := hasAttribute(modelRelation.Attributes, "optional")
 			typeColumnName := strcase.ToSnakeCaseLower(relatedModelName) + "_type"
 			typeColumn := psqldef.TableColumn{
 				Name:       typeColumnName,
 				Type:       psqldef.PSQLTypeText,
-				NotNull:    true,
+				NotNull:    !isOptional,
 				PrimaryKey: false,
 				Default:    "",
 			}
@@ -243,7 +247,7 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 			idColumn := psqldef.TableColumn{
 				Name:       idColumnName,
 				Type:       psqldef.PSQLTypeText,
-				NotNull:    true,
+				NotNull:    !isOptional,
 				PrimaryKey: false,
 				Default:    "",
 			}
@@ -276,7 +280,6 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
-			// Use relatedModelName for column naming to maintain backward compatibility
 			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
 
 			columnType, supported := typeMap[targetPrimaryIdField.Type]
@@ -287,7 +290,7 @@ func getColumnsForModelRelations(r *registry.Registry, typeMap map[yaml.ModelFie
 			column := psqldef.TableColumn{
 				Name:       columnName,
 				Type:       columnType,
-				NotNull:    true,
+				NotNull:    !hasAttribute(modelRelation.Attributes, "optional"),
 				PrimaryKey: false,
 				Default:    "",
 			}
@@ -334,11 +337,14 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 		}
 
 		if yamlops.IsRelationFor(relationType) && yamlops.IsRelationOne(relationType) {
-			// Use relatedModelName for column naming to maintain backward compatibility
 			columnName := GetForeignKeyColumnName(relatedModelName, targetPrimaryIdName)
-			// Use targetModelName for the reference table
 			refTableName := GetTableNameFromModel(targetModelName)
 			refColumnName := GetColumnNameFromField(targetPrimaryIdName)
+
+			onDelete := "CASCADE"
+			if hasAttribute(modelRelation.Attributes, "optional") {
+				onDelete = "SET NULL"
+			}
 
 			foreignKey := psqldef.ForeignKey{
 				Schema:         schema,
@@ -348,7 +354,7 @@ func getForeignKeysForModelRelations(schema string, tableName string, r *registr
 				RefSchema:      schema,
 				RefTableName:   refTableName,
 				RefColumnNames: []string{refColumnName},
-				OnDelete:       "CASCADE",
+				OnDelete:       onDelete,
 				OnUpdate:       "",
 			}
 
@@ -650,33 +656,75 @@ func getJunctionTablesForForManyPolyRelations(schema string, r *registry.Registr
 }
 
 // addUniqueIndicesFromIdentifiers adds unique indices for model identifiers
-func addUniqueIndicesFromIdentifiers(table *psqldef.Table, identifiers map[string]yaml.ModelIdentifier) {
+func addUniqueIndicesFromIdentifiers(table *psqldef.Table, identifiers map[string]yaml.ModelIdentifier, related map[string]yaml.ModelRelation, r *registry.Registry) error {
 	tableName := table.Name
 
-	// Add unique indices for identifiers
-	for idName, identifier := range identifiers {
+	idNames := core.MapKeysSorted(identifiers)
+	for _, idName := range idNames {
+		identifier := identifiers[idName]
 		if idName == "primary" {
 			continue
 		}
-		columnNames := make([]string, len(identifier.Fields))
-		for fieldIdx, field := range identifier.Fields {
-			columnNames[fieldIdx] = GetColumnNameFromField(field)
+
+		columnNames := make([]string, 0, len(identifier.Fields))
+		for _, field := range identifier.Fields {
+			resolved, resolveErr := resolveIdentifierFieldToColumns(field, related, r)
+			if resolveErr != nil {
+				return fmt.Errorf("identifier '%s': %w", idName, resolveErr)
+			}
+			columnNames = append(columnNames, resolved...)
 		}
 
-		var indexName string
-		if len(columnNames) == 1 {
-			indexName = fmt.Sprintf("idx_%s_%s", tableName, columnNames[0])
-		} else {
-			indexName = fmt.Sprintf("idx_%s_%s", tableName, strings.Join(columnNames, "_"))
-		}
+		indexName := fmt.Sprintf("idx_%s_%s", tableName, strings.Join(columnNames, "_"))
 
 		table.Indices = append(table.Indices, psqldef.Index{
-			Name:      indexName,
+			Name:      AbbreviateIdentifier(indexName, true),
 			TableName: tableName,
 			Columns:   columnNames,
 			IsUnique:  true,
 		})
 	}
+	return nil
+}
+
+func resolveIdentifierFieldToColumns(field string, related map[string]yaml.ModelRelation, r *registry.Registry) ([]string, error) {
+	if !strings.HasPrefix(field, "rel:") {
+		return []string{GetColumnNameFromField(field)}, nil
+	}
+
+	relationName := strings.TrimPrefix(field, "rel:")
+	relation, isRelation := related[relationName]
+	if !isRelation {
+		return nil, fmt.Errorf("field '%s' references relation '%s' which is not declared in 'related'", field, relationName)
+	}
+
+	relationType := relation.Type
+
+	if yamlops.IsRelationPolyFor(relationType) && yamlops.IsRelationPolyOne(relationType) {
+		typeCol := strcase.ToSnakeCaseLower(relationName) + "_type"
+		idCol := strcase.ToSnakeCaseLower(relationName) + "_id"
+		return []string{typeCol, idCol}, nil
+	}
+
+	if yamlops.IsRelationPoly(relationType) {
+		return nil, fmt.Errorf("field '%s' references a polymorphic relation that cannot be used in an identifier", field)
+	}
+
+	targetModelName := yamlops.GetRelationTargetName(relationName, relation.Aliased)
+	relatedModel, modelErr := r.GetModel(targetModelName)
+	if modelErr != nil {
+		return nil, fmt.Errorf("field '%s': %w", field, modelErr)
+	}
+
+	primaryID, hasPrimary := relatedModel.Identifiers["primary"]
+	if !hasPrimary {
+		return nil, fmt.Errorf("related model '%s' has no primary identifier", targetModelName)
+	}
+	if len(primaryID.Fields) != 1 {
+		return nil, fmt.Errorf("related model '%s' primary identifier must have exactly one field", targetModelName)
+	}
+
+	return []string{GetForeignKeyColumnName(relationName, primaryID.Fields[0])}, nil
 }
 
 // quoteReservedColumnNames quotes column names that are PostgreSQL reserved words

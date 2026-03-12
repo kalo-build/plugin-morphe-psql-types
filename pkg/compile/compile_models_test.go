@@ -2872,3 +2872,267 @@ func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_Related_HasOneP
 	suite.Equal("tasks", taskTable.Name)
 	suite.Len(taskTable.Columns, 2) // Only id and status
 }
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_CompositeIdentifier_FieldsOnly() {
+	config := suite.getCompileConfig()
+
+	model0 := yaml.Model{
+		Name: "Person",
+		Fields: map[string]yaml.ModelField{
+			"ID": {
+				Type: yaml.ModelFieldTypeAutoIncrement,
+			},
+			"FirstName": {
+				Type: yaml.ModelFieldTypeString,
+			},
+			"LastName": {
+				Type: yaml.ModelFieldTypeString,
+			},
+			"Email": {
+				Type: yaml.ModelFieldTypeString,
+			},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {
+				Fields: []string{"ID"},
+			},
+			"fullName": {
+				Fields: []string{"FirstName", "LastName"},
+			},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	r := registry.NewRegistry()
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, model0)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+	suite.Equal("people", table0.Name)
+
+	suite.Len(table0.Indices, 1)
+	idx := table0.Indices[0]
+	suite.Equal("idx_people_first_name_last_name", idx.Name)
+	suite.Equal("people", idx.TableName)
+	suite.Equal([]string{"first_name", "last_name"}, idx.Columns)
+	suite.True(idx.IsUnique)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_CompositeIdentifier_WithRelations() {
+	config := suite.getCompileConfig()
+
+	taskModel := yaml.Model{
+		Name: "Task",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	tagModel := yaml.Model{
+		Name: "Tag",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+		taskTagModel := yaml.Model{
+			Name: "TaskTag",
+			Fields: map[string]yaml.ModelField{
+				"ID": {
+					Type: yaml.ModelFieldTypeUUID,
+				},
+			},
+			Identifiers: map[string]yaml.ModelIdentifier{
+				"primary": {
+					Fields: []string{"ID"},
+				},
+				"taskTag": {
+					Fields: []string{"rel:Task", "rel:Tag"},
+				},
+			},
+		Related: map[string]yaml.ModelRelation{
+			"Task": {Type: "ForOne"},
+			"Tag":  {Type: "ForOne"},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Task", taskModel)
+	r.SetModel("Tag", tagModel)
+	r.SetModel("TaskTag", taskTagModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, taskTagModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+	suite.Equal("task_tags", table0.Name)
+
+	suite.Len(table0.Columns, 3) // id, tag_id, task_id (sorted)
+
+	// FK indices + composite unique index
+	suite.Len(table0.Indices, 3)
+
+	// FK indices come first (from getIndicesForForeignKeys)
+	suite.Equal("idx_task_tags_tag_id", table0.Indices[0].Name)
+	suite.False(table0.Indices[0].IsUnique)
+	suite.Equal("idx_task_tags_task_id", table0.Indices[1].Name)
+	suite.False(table0.Indices[1].IsUnique)
+
+	// Composite unique index from identifier
+	compositeIdx := table0.Indices[2]
+	suite.Equal("idx_task_tags_task_id_tag_id", compositeIdx.Name)
+	suite.Equal("task_tags", compositeIdx.TableName)
+	suite.Equal([]string{"task_id", "tag_id"}, compositeIdx.Columns)
+	suite.True(compositeIdx.IsUnique)
+
+	suite.Len(table0.ForeignKeys, 2)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_CompositeIdentifier_MixedFieldsAndRelations() {
+	config := suite.getCompileConfig()
+
+	projectModel := yaml.Model{
+		Name: "Project",
+		Fields: map[string]yaml.ModelField{
+			"ID": {Type: yaml.ModelFieldTypeAutoIncrement},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+		memberModel := yaml.Model{
+			Name: "ProjectMember",
+			Fields: map[string]yaml.ModelField{
+				"ID": {
+					Type: yaml.ModelFieldTypeUUID,
+				},
+				"Email": {
+					Type: yaml.ModelFieldTypeString,
+				},
+			},
+			Identifiers: map[string]yaml.ModelIdentifier{
+				"primary": {
+					Fields: []string{"ID"},
+				},
+				"projectEmail": {
+					Fields: []string{"rel:Project", "Email"},
+				},
+			},
+		Related: map[string]yaml.ModelRelation{
+			"Project": {Type: "ForOne"},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Project", projectModel)
+	r.SetModel("ProjectMember", memberModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, memberModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+	suite.Equal("project_members", table0.Name)
+
+	// FK index + composite unique index
+	suite.GreaterOrEqual(len(table0.Indices), 2)
+
+	var compositeIdx *psqldef.Index
+	for i := range table0.Indices {
+		if table0.Indices[i].IsUnique {
+			compositeIdx = &table0.Indices[i]
+			break
+		}
+	}
+
+	suite.NotNil(compositeIdx)
+	suite.Equal([]string{"project_id", "email"}, compositeIdx.Columns)
+	suite.True(compositeIdx.IsUnique)
+}
+
+func (suite *CompileModelsTestSuite) TestMorpheModelToPSQLTables_CompositeIdentifier_WithForOnePoly() {
+	config := suite.getCompileConfig()
+
+	postModel := yaml.Model{
+		Name: "Post",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	articleModel := yaml.Model{
+		Name: "Article",
+		Fields: map[string]yaml.ModelField{
+			"id": {Type: yaml.ModelFieldTypeUUID},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"id"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+		reactionModel := yaml.Model{
+			Name: "Reaction",
+			Fields: map[string]yaml.ModelField{
+				"id":   {Type: yaml.ModelFieldTypeUUID},
+				"Kind": {Type: yaml.ModelFieldTypeString},
+			},
+			Identifiers: map[string]yaml.ModelIdentifier{
+				"primary": {Fields: []string{"id"}},
+				"uniqueReaction": {
+					Fields: []string{"rel:Reactable", "Kind"},
+				},
+			},
+		Related: map[string]yaml.ModelRelation{
+			"Reactable": {
+				Type: "ForOnePoly",
+				For:  []string{"Post", "Article"},
+			},
+		},
+	}
+
+	r := registry.NewRegistry()
+	r.SetModel("Post", postModel)
+	r.SetModel("Article", articleModel)
+	r.SetModel("Reaction", reactionModel)
+
+	allTables, allTablesErr := compile.MorpheModelToPSQLTables(config, r, reactionModel)
+
+	suite.Nil(allTablesErr)
+	suite.Len(allTables, 1)
+
+	table0 := allTables[0]
+	suite.Equal("reactions", table0.Name)
+
+	var compositeIdx *psqldef.Index
+	for i := range table0.Indices {
+		if table0.Indices[i].IsUnique {
+			compositeIdx = &table0.Indices[i]
+			break
+		}
+	}
+
+	suite.NotNil(compositeIdx)
+	suite.Equal([]string{"reactable_type", "reactable_id", "kind"}, compositeIdx.Columns)
+	suite.True(compositeIdx.IsUnique)
+}
