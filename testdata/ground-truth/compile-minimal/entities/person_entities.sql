@@ -7,7 +7,7 @@ SELECT
 	contact_infos.email,
 	people.id,
 	people.last_name,
-	people.nationality
+	people.nationality_id AS nationality
 FROM public.people
 LEFT JOIN public.contact_infos
 	ON people.id = contact_infos.id;

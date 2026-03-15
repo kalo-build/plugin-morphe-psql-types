@@ -12,6 +12,7 @@ import (
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/cfg"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/compile/hook"
 	"github.com/kalo-build/plugin-morphe-psql-types/pkg/psqldef"
+	"github.com/kalo-build/plugin-morphe-psql-types/pkg/typemap"
 )
 
 // Error definitions
@@ -163,7 +164,7 @@ func processFieldPath(ctx *entityCompileContext, fieldName string, relationshipC
 
 	// If there's only one element, this is a direct field reference (e.g., "User.UUID")
 	if len(relationshipChain) == 1 {
-		return addRegularColumn(ctx, columnName, ctx.tableName, targetFieldName)
+		return addRegularColumn(ctx, columnName, ctx.tableName, targetFieldName, rootModelName)
 	}
 
 	// More than one element means we have relationships to traverse
@@ -208,7 +209,7 @@ func processFieldPath(ctx *entityCompileContext, fieldName string, relationshipC
 	}
 
 	// We've traversed all relationships, now add the final field column
-	return addRegularColumn(ctx, columnName, currentTableName, targetFieldName)
+	return addRegularColumn(ctx, columnName, currentTableName, targetFieldName, currentModelName)
 }
 
 // handlePolymorphicFieldPath handles field paths that encounter polymorphic relationships
@@ -292,9 +293,23 @@ func addPolymorphicColumns(ctx *entityCompileContext, relationName, baseColumnNa
 	return nil
 }
 
-// addRegularColumn adds a regular column to the view
-func addRegularColumn(ctx *entityCompileContext, columnName, tableName, fieldName string) error {
-	sourceRef := fmt.Sprintf("%s.%s", tableName, strcase.ToSnakeCaseLower(fieldName))
+// addRegularColumn adds a regular column to the view.
+// It checks if the target field is an enum type and appends _id to match the actual DB column name.
+func addRegularColumn(ctx *entityCompileContext, columnName, tableName, fieldName, modelName string) error {
+	dbColumnName := strcase.ToSnakeCaseLower(fieldName)
+
+	model, err := ctx.registry.GetModel(modelName)
+	if err == nil {
+		if field, exists := model.Fields[fieldName]; exists {
+			if _, isStandardType := typemap.MorpheModelFieldToPSQLField[field.Type]; !isStandardType {
+				if _, enumErr := ctx.registry.GetEnum(string(field.Type)); enumErr == nil {
+					dbColumnName += "_id"
+				}
+			}
+		}
+	}
+
+	sourceRef := fmt.Sprintf("%s.%s", tableName, dbColumnName)
 
 	column := psqldef.ViewColumn{
 		Name:      columnName,
@@ -352,10 +367,12 @@ func addJoinClause(ctx *entityCompileContext, joinTable string, info joinInfo) e
 	rootPrimaryIdName := strcase.ToSnakeCaseLower(rootPrimaryId.Fields[0])
 	relatedPrimaryIdName := strcase.ToSnakeCaseLower(relatedPrimaryId.Fields[0])
 
+	actualTable := Pluralize(strcase.ToSnakeCaseLower(targetModelName))
+
 	joinClause := psqldef.JoinClause{
 		Type:   "LEFT",
 		Schema: ctx.config.MorpheModelsConfig.Schema,
-		Table:  joinTable,
+		Table:  actualTable,
 		Alias:  joinTable,
 		Conditions: []psqldef.JoinCondition{
 			{

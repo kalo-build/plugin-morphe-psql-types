@@ -530,7 +530,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_EnumField() {
 	column0 := view.Columns[0]
 	suite.Equal(column0.Name, "nationality")
 	suite.Equal(column0.Alias, "")
-	suite.Equal(column0.SourceRef, "users.nationality")
+	suite.Equal(column0.SourceRef, "users.nationality_id")
 
 	column1 := view.Columns[1]
 	suite.Equal(column1.Name, "uuid")
@@ -538,6 +538,104 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_EnumField() {
 	suite.Equal(column1.SourceRef, "users.uuid")
 
 	suite.Equal(0, len(view.Joins))
+}
+
+// TestMorpheEntityToPSQLView_EnumField_ThroughRelation tests that enum fields accessed
+// through a relationship also produce _id column references (e.g., Invoice.Status through
+// an Organization → Invoice relation).
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_EnumField_ThroughRelation() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	invoiceStatusEnum := yaml.Enum{
+		Name: "InvoiceStatus",
+		Type: yaml.EnumTypeString,
+		Entries: map[string]any{
+			"DRAFT":   "Draft",
+			"SENT":    "Sent",
+			"PAID":    "Paid",
+			"OVERDUE": "Overdue",
+		},
+	}
+	r.SetEnum("InvoiceStatus", invoiceStatusEnum)
+
+	invoiceModel := yaml.Model{
+		Name: "Invoice",
+		Fields: map[string]yaml.ModelField{
+			"ID":            {Type: yaml.ModelFieldTypeUUID},
+			"InvoiceNumber": {Type: yaml.ModelFieldTypeString},
+			"Status":        {Type: "InvoiceStatus"},
+			"AmountCents":   {Type: yaml.ModelFieldTypeInteger},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Organization": {Type: "ForOne"},
+		},
+	}
+
+	orgModel := yaml.Model{
+		Name: "Organization",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeUUID},
+			"Name": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Invoice": {Type: "HasMany"},
+		},
+	}
+
+	invoiceEntity := yaml.Entity{
+		Name: "Invoice",
+		Fields: map[string]yaml.EntityField{
+			"ID":            {Type: "Invoice.ID"},
+			"InvoiceNumber": {Type: "Invoice.InvoiceNumber"},
+			"Status":        {Type: "Invoice.Status"},
+			"AmountCents":   {Type: "Invoice.AmountCents"},
+			"OrgName":       {Type: "Invoice.Organization.Name"},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	r.SetModel("Invoice", invoiceModel)
+	r.SetModel("Organization", orgModel)
+	r.SetEntity("Invoice", invoiceEntity)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, invoiceEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+	suite.Equal("invoice_entities", view.Name)
+	suite.Equal("invoices", view.FromTable)
+
+	suite.Len(view.Columns, 5)
+
+	suite.Equal("amount_cents", view.Columns[0].Name)
+	suite.Equal("invoices.amount_cents", view.Columns[0].SourceRef)
+
+	suite.Equal("id", view.Columns[1].Name)
+	suite.Equal("invoices.id", view.Columns[1].SourceRef)
+
+	suite.Equal("invoice_number", view.Columns[2].Name)
+	suite.Equal("invoices.invoice_number", view.Columns[2].SourceRef)
+
+	suite.Equal("org_name", view.Columns[3].Name)
+	suite.Equal("organizations.name", view.Columns[3].SourceRef)
+
+	suite.Equal("status", view.Columns[4].Name)
+	suite.Equal("invoices.status_id", view.Columns[4].SourceRef)
+
+	suite.Len(view.Joins, 1)
+	join := view.Joins[0]
+	suite.Equal("organizations", join.Table)
+	suite.Equal("organizations", join.Alias)
 }
 
 func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_NoSchema() {
@@ -1542,7 +1640,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 	workJoin := view.Joins[0]
 	suite.Equal("LEFT", workJoin.Type)
 	suite.Equal("public", workJoin.Schema)
-	suite.Equal("work_contacts", workJoin.Table)
+	suite.Equal("contacts", workJoin.Table)
 	suite.Equal("work_contacts", workJoin.Alias)
 	suite.Len(workJoin.Conditions, 1)
 
@@ -1693,7 +1791,7 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 	personalJoin := view.Joins[0]
 	suite.Equal("LEFT", personalJoin.Type)
 	suite.Equal("public", personalJoin.Schema)
-	suite.Equal("personal_contacts", personalJoin.Table)
+	suite.Equal("contacts", personalJoin.Table)
 	suite.Equal("personal_contacts", personalJoin.Alias)
 	suite.Len(personalJoin.Conditions, 1)
 	suite.Equal("person_profiles.id", personalJoin.Conditions[0].LeftRef)
@@ -1703,11 +1801,179 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 	workJoin := view.Joins[1]
 	suite.Equal("LEFT", workJoin.Type)
 	suite.Equal("public", workJoin.Schema)
-	suite.Equal("work_contacts", workJoin.Table)
+	suite.Equal("contacts", workJoin.Table)
 	suite.Equal("work_contacts", workJoin.Alias)
 	suite.Len(workJoin.Conditions, 1)
 	suite.Equal("person_profiles.id", workJoin.Conditions[0].LeftRef)
 	suite.Equal("work_contacts.id", workJoin.Conditions[0].RightRef)
+}
+
+// TestMorpheEntityToPSQLView_AliasedRelation_DifferentModelName tests that aliased relations
+// use the actual target model's table for the JOIN, not the alias name.
+// This mirrors Comment.Author → User where "authors" is not a real table.
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_AliasedRelation_DifferentModelName() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	userModel := yaml.Model{
+		Name: "User",
+		Fields: map[string]yaml.ModelField{
+			"ID":        {Type: yaml.ModelFieldTypeUUID},
+			"FirstName": {Type: yaml.ModelFieldTypeString},
+			"LastName":  {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{},
+	}
+
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"ID":        {Type: yaml.ModelFieldTypeUUID},
+			"Body":      {Type: yaml.ModelFieldTypeString},
+			"CreatedAt": {Type: yaml.ModelFieldTypeTime},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Author": {
+				Type:    "ForOne",
+				Aliased: "User",
+			},
+		},
+	}
+
+	commentEntity := yaml.Entity{
+		Name: "Comment",
+		Fields: map[string]yaml.EntityField{
+			"ID":              {Type: "Comment.ID"},
+			"Body":            {Type: "Comment.Body"},
+			"CreatedAt":       {Type: "Comment.CreatedAt"},
+			"AuthorFirstName": {Type: "Comment.Author.FirstName"},
+			"AuthorLastName":  {Type: "Comment.Author.LastName"},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	r.SetModel("User", userModel)
+	r.SetModel("Comment", commentModel)
+	r.SetEntity("Comment", commentEntity)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, commentEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+
+	suite.Equal("public", view.Schema)
+	suite.Equal("comment_entities", view.Name)
+	suite.Equal("public", view.FromSchema)
+	suite.Equal("comments", view.FromTable)
+
+	suite.Len(view.Columns, 5)
+
+	suite.Equal("author_first_name", view.Columns[0].Name)
+	suite.Equal("authors.first_name", view.Columns[0].SourceRef)
+
+	suite.Equal("author_last_name", view.Columns[1].Name)
+	suite.Equal("authors.last_name", view.Columns[1].SourceRef)
+
+	suite.Equal("body", view.Columns[2].Name)
+	suite.Equal("comments.body", view.Columns[2].SourceRef)
+
+	suite.Equal("created_at", view.Columns[3].Name)
+	suite.Equal("comments.created_at", view.Columns[3].SourceRef)
+
+	suite.Equal("id", view.Columns[4].Name)
+	suite.Equal("comments.id", view.Columns[4].SourceRef)
+
+	// The join should use the actual target table "users", not the alias "authors"
+	suite.Len(view.Joins, 1)
+	join := view.Joins[0]
+	suite.Equal("LEFT", join.Type)
+	suite.Equal("public", join.Schema)
+	suite.Equal("users", join.Table)
+	suite.Equal("authors", join.Alias)
+	suite.Len(join.Conditions, 1)
+	suite.Equal("comments.id", join.Conditions[0].LeftRef)
+	suite.Equal("authors.id", join.Conditions[0].RightRef)
+}
+
+// TestMorpheEntityToPSQLView_AliasedRelation_SelfReferencing tests aliased self-referencing
+// relations like Comment.Parent → Comment and Comment.Reply → Comment.
+func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_AliasedRelation_SelfReferencing() {
+	config := suite.getCompileConfig()
+	r := registry.NewRegistry()
+
+	commentModel := yaml.Model{
+		Name: "Comment",
+		Fields: map[string]yaml.ModelField{
+			"ID":   {Type: yaml.ModelFieldTypeUUID},
+			"Body": {Type: yaml.ModelFieldTypeString},
+		},
+		Identifiers: map[string]yaml.ModelIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.ModelRelation{
+			"Parent": {
+				Type:    "ForOne",
+				Aliased: "Comment",
+			},
+			"Reply": {
+				Type:    "HasMany",
+				Aliased: "Comment",
+			},
+		},
+	}
+
+	commentEntity := yaml.Entity{
+		Name: "CommentThread",
+		Fields: map[string]yaml.EntityField{
+			"ID":         {Type: "Comment.ID"},
+			"Body":       {Type: "Comment.Body"},
+			"ParentBody": {Type: "Comment.Parent.Body"},
+		},
+		Identifiers: map[string]yaml.EntityIdentifier{
+			"primary": {Fields: []string{"ID"}},
+		},
+		Related: map[string]yaml.EntityRelation{},
+	}
+
+	r.SetModel("Comment", commentModel)
+	r.SetEntity("CommentThread", commentEntity)
+
+	view, err := compile.MorpheEntityToPSQLView(config, r, commentEntity)
+
+	suite.Nil(err)
+	suite.NotNil(view)
+
+	suite.Equal("comment_thread_entities", view.Name)
+	suite.Equal("comment_threads", view.FromTable)
+
+	suite.Len(view.Columns, 3)
+
+	suite.Equal("body", view.Columns[0].Name)
+	suite.Equal("comment_threads.body", view.Columns[0].SourceRef)
+
+	suite.Equal("id", view.Columns[1].Name)
+	suite.Equal("comment_threads.id", view.Columns[1].SourceRef)
+
+	suite.Equal("parent_body", view.Columns[2].Name)
+	suite.Equal("parents.body", view.Columns[2].SourceRef)
+
+	// Self-referencing alias: Table should be "comments" (actual model), Alias should be "parents"
+	suite.Len(view.Joins, 1)
+	join := view.Joins[0]
+	suite.Equal("LEFT", join.Type)
+	suite.Equal("comments", join.Table)
+	suite.Equal("parents", join.Alias)
+	suite.Equal("comment_threads.id", join.Conditions[0].LeftRef)
+	suite.Equal("parents.id", join.Conditions[0].RightRef)
 }
 
 // TestMorpheModelToPSQLTables_Aliased_ErrorHandling tests error cases for aliased relationships
