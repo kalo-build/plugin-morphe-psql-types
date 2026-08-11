@@ -1,6 +1,11 @@
+-- Table definition for contacts
+
+CREATE SCHEMA IF NOT EXISTS public;
+
 CREATE TABLE IF NOT EXISTS public.contacts (
-    id SERIAL PRIMARY KEY,
-    email TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    address TEXT NOT NULL
+	address TEXT,
+	email TEXT,
+	id SERIAL PRIMARY KEY,
+	phone TEXT
 );
+

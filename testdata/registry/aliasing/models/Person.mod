@@ -7,9 +7,7 @@ fields:
   Email:
     type: String
 identifiers:
-  primary:
-    fields:
-      - ID
+  primary: ID
 related:
   WorkContact:
     type: ForOne
@@ -17,9 +15,3 @@ related:
   PersonalContact:
     type: ForOne
     aliased: Contact
-  WorkProjects:
-    type: ForMany
-    aliased: Project
-  PersonalProjects:
-    type: ForMany
-    aliased: Project

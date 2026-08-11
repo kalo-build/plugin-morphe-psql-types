@@ -1510,11 +1510,11 @@ func (suite *CompileEntitiesTestSuite) TestMorpheEntityToPSQLView_FieldPath_Alia
 		Related: map[string]yaml.ModelRelation{
 			"PersonsAsWork": {
 				Type:    "HasMany",
-				Aliased: "Person.WorkContact",
+				Through: "WorkContact",
 			},
 			"PersonsAsPersonal": {
 				Type:    "HasMany",
-				Aliased: "Person.PersonalContact",
+				Through: "PersonalContact",
 			},
 		},
 	}

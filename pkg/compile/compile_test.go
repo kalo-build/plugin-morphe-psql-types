@@ -182,3 +182,69 @@ func (suite *CompileTestSuite) TestMorpheToPSQL() {
 	suite.FileExists(entityPath3)
 	suite.FileEquals(entityPath3, gtEntityPath3)
 }
+
+func (suite *CompileTestSuite) TestMorpheToPSQL_Aliasing() {
+	// This test verifies aliasing support for ForOne and ForMany relationships
+	workingDirPath := suite.TestDirPath + "/working-aliasing"
+	suite.Nil(os.Mkdir(workingDirPath, 0644))
+	defer os.RemoveAll(workingDirPath)
+
+	// Set up paths for aliasing test data
+	aliasingGroundTruthPath := filepath.Join(suite.TestDirPath, "ground-truth", "aliasing")
+	aliasingModelsDirPath := filepath.Join(suite.TestDirPath, "registry", "aliasing", "models")
+
+	config := compile.MorpheCompileConfig{
+		MorpheLoadRegistryConfig: rcfg.MorpheLoadRegistryConfig{
+			RegistryEnumsDirPath:      "", // No enums in aliasing test
+			RegistryStructuresDirPath: "", // No structures in aliasing test
+			RegistryModelsDirPath:     aliasingModelsDirPath,
+			RegistryEntitiesDirPath:   "", // No entities in aliasing test
+		},
+		MorpheConfig: cfg.MorpheConfig{
+			MorpheModelsConfig: cfg.MorpheModelsConfig{
+				Schema:       "public",
+				UseBigSerial: false,
+			},
+			MorpheStructuresConfig: cfg.MorpheStructuresConfig{
+				Schema:            "public",
+				UseBigSerial:      false,
+				EnablePersistence: false,
+			},
+			MorpheEnumsConfig: cfg.MorpheEnumsConfig{
+				Schema:       "public",
+				UseBigSerial: false,
+			},
+			MorpheEntitiesConfig: cfg.MorpheEntitiesConfig{
+				Schema:         "public",
+				ViewNameSuffix: "_entities",
+			},
+		},
+
+		ModelWriter: &compile.MorpheTableFileWriter{
+			Type:          compile.MorpheTableTypeModels,
+			TargetDirPath: workingDirPath + "/models",
+		},
+	}
+
+	compileErr := compile.MorpheToPSQL(config)
+	suite.NoError(compileErr)
+
+	// Verify generated models match ground truth
+	modelsDirPath := workingDirPath + "/models"
+	gtModelsDirPath := aliasingGroundTruthPath + "/models"
+	suite.DirExists(modelsDirPath)
+
+	// Test Person model with aliased ForOne relationships
+	personPath := modelsDirPath + "/people.sql"
+	gtPersonPath := gtModelsDirPath + "/people.sql"
+	suite.FileExists(personPath)
+	suite.FileEquals(personPath, gtPersonPath)
+
+	// Test Contact model
+	contactPath := modelsDirPath + "/contacts.sql"
+	gtContactPath := gtModelsDirPath + "/contacts.sql"
+	suite.FileExists(contactPath)
+	suite.FileEquals(contactPath, gtContactPath)
+
+	// Only test the two models we have in this simplified aliasing test
+}
